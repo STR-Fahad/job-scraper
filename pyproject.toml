@@ -1,0 +1,30 @@
+[build-system]
+requires = ["setuptools>=75"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "personal-job-scraper"
+version = "0.1.0"
+description = "Public job API collectors with local SQLite storage"
+requires-python = ">=3.13"
+dependencies = ["httpx>=0.28,<0.29", "beautifulsoup4>=4.13,<5", "pydantic>=2.10,<3"]
+
+[project.optional-dependencies]
+test = ["pytest>=8.3,<10", "ruff>=0.11,<1"]
+
+[project.scripts]
+job-scraper = "job_scraper.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["job_scraper*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "--basetemp=work/pytest"
+
+[tool.ruff]
+line-length = 100
+target-version = "py313"
+
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F", "I", "B"]

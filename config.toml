@@ -1,0 +1,41 @@
+database = "data/jobs.sqlite3"
+timeout_seconds = 30
+retries = 3
+max_retry_delay = 120
+
+[[sources]]
+source = "himalayas"
+max_pages = 100
+page_size = 20
+interval_seconds = 2
+
+[[sources]]
+source = "remotive"
+
+[[sources]]
+source = "arbeitnow"
+max_pages = 100
+interval_seconds = 2
+
+# Verified public example boards (2026-10-25); enable only employers you want.
+# Copy a block, use discovery, or enable via the sources command.
+[[sources]]
+source = "greenhouse"
+enabled = false
+board = "enveritas"
+company = "Enveritas"
+
+[[sources]]
+source = "ashby"
+enabled = false
+board = "ashby"
+company = "Ashby"
+
+[[sources]]
+source = "lever"
+enabled = false
+board = "spreetail"
+company = "Spreetail"
+region = "global"
+page_size = 100
+max_pages = 100
