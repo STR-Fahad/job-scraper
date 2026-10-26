@@ -36,6 +36,7 @@ class Decision(BaseModel):
     status: Status = "UNVERIFIED"
     evidence: list[Evidence] = Field(default_factory=list)
     reason: str
+    conflict: bool = False
 
 
 class Classification(BaseModel):
@@ -62,7 +63,10 @@ def agree(items, reason):
     states = {item.status for item in items}
     state = next(iter(states)) if len(states) == 1 else "UNVERIFIED"
     return Decision(
-        status=state, reason=reason, evidence=[e for item in items for e in item.evidence]
+        status=state,
+        reason=reason,
+        evidence=[e for item in items for e in item.evidence],
+        conflict="ELIGIBLE" in states and "INELIGIBLE" in states,
     )
 
 
@@ -77,7 +81,10 @@ def requirements(items, reason):
         else "ELIGIBLE"
     )
     return Decision(
-        status=state, reason=reason, evidence=[e for item in items for e in item.evidence]
+        status=state,
+        reason=reason,
+        evidence=[e for item in items for e in item.evidence],
+        conflict=any(item.conflict for item in items),
     )
 
 
@@ -85,7 +92,7 @@ def clauses(text):
     # Do not split decimals, U.S. abbreviations or quoted year possessives.
     return [
         part.strip(" \t•●-")
-        for part in re.split(r"[\n;]+|(?<=[.!?])\s+(?=[A-Z])", text)
+        for part in re.split(r"[\n;]+|(?<=[.!?])\s+(?=[A-Z]|\d+\s+days?\b)", text)
         if part.strip()
     ]
 
@@ -462,6 +469,83 @@ def employment(job):
     )
 
 
+OFFICE_REQUIRED = re.compile(
+    r"\b(?:must|expected to|required to|need to)\s+(?:work|be|attend|come)"
+    r"\s+(?:(?:from|at|in|to|into)\s+)?(?:the\s+|our\s+|an\s+)?(?:office|on[- ]site)\b"
+    r"|\b(?:requires? (?:you to )?|requirement to )\s*(?:work|be|attend|come)"
+    r"\s+(?:(?:from|at|in|to|into)\s+)?(?:the\s+|our\s+|an\s+)?(?:office|on[- ]site)\b"
+    r"|\b(?:office attendance|on[- ]site attendance|in[- ]office presence)\s+"
+    r"(?:is\s+|are\s+)?(?:mandatory|required)\b"
+    r"|\b(?:requires?|mandates?)\s+(?:regular\s+|occasional\s+)?"
+    r"(?:office|in[- ]office|on[- ]site)\s+(?:attendance|presence|visits?)\b"
+    r"|\b(?:office|in[- ]office|on[- ]site)\s+(?:attendance|presence|visits?)\s+"
+    r"(?:is\s+)?(?:required|mandatory)\b"
+    r"|\b(?:required|expected)\s+(?:to\s+)?visit\s+(?:the\s+|our\s+)?office\b"
+    r"|\b(?:\d+|at least (?:one|two|three|four|five|\d+))\s+days?\s+"
+    r"(?:per|a|each)\s+week\s+(?:in|at)\s+(?:the\s+|our\s+)?office\b"
+    r"|\bwork\s+from\s+(?:the\s+|our\s+)?office\s+"
+    r"(?:\d+|at least (?:one|two|three|four|five|\d+))\s+days?\b"
+    r"|\b\d+\s+days?\s+(?:in|at)\s+(?:the\s+|our\s+)?office\s+"
+    r"(?:per|a|each)\s+week\b"
+    r"|\b(?:hybrid|on[- ]site|in[- ]office)\s+(?:schedule|attendance)\s+"
+    r"(?:is\s+)?(?:required|mandatory)\b"
+    r"|\bhybrid\s+(?:role|position|schedule)\b.{0,45}"
+    r"\b(?:\d+\s+days?|office|on[- ]site)\b"
+    r"|\b(?:must|expected to|required to|need to)\s+(?:commute|travel)\s+to\s+"
+    r"(?:the\s+|our\s+)?office\b",
+    re.I,
+)
+OFFICE_OPTIONAL = re.compile(
+    r"\b(?:no|without|optional|voluntary)\b.{0,45}\b(?:office|on[- ]site|in[- ]office)\b"
+    r"|\b(?:office|on[- ]site|in[- ]office)\b.{0,45}"
+    r"\b(?:not required|optional|voluntary)\b",
+    re.I,
+)
+
+
+def workplace(job):
+    provider = finding(
+        "ELIGIBLE"
+        if job.workplace_type == "remote"
+        else "INELIGIBLE"
+        if job.workplace_type in {"hybrid", "onsite"}
+        else "UNVERIFIED",
+        job.workplace_type,
+        "normalized_workplace",
+        "workplace_type",
+    )
+    statements = clauses(job.description)
+    mandatory = [
+        finding("INELIGIBLE", clause, "mandatory_office_attendance")
+        for clause in statements
+        if OFFICE_REQUIRED.search(clause) and not OFFICE_OPTIONAL.search(clause)
+    ]
+    waived = [
+        finding("ELIGIBLE", clause, "office_attendance_waived")
+        for clause in statements
+        if re.search(
+            r"\bno (?:mandatory |required )?(?:office|in[- ]office|on[- ]site) "
+            r"(?:attendance|presence|visits?)(?: is required)?\b"
+            r"|\b(?:office|in[- ]office|on[- ]site) (?:attendance|presence|visits?) "
+            r"(?:is )?not required\b"
+            r"|\bnot required to (?:work|attend|come).*\boffice\b",
+            clause,
+            re.I,
+        )
+    ]
+    if mandatory and waived and job.workplace_type == "remote":
+        return Decision(
+            status="UNVERIFIED",
+            reason="Posting both requires and waives office attendance",
+            evidence=[e for item in [provider, *mandatory, *waived] for e in item.evidence],
+            conflict=True,
+        )
+    # A concrete attendance obligation outweighs a provider's generic remote flag.
+    return requirements(
+        [provider, *mandatory], "Only fully remote roles fit the workplace preference"
+    )
+
+
 def classify(job: Job) -> Classification:
     matches, category = relevance(job)
     exp, extracted = experience(job)
@@ -470,12 +554,7 @@ def classify(job: Job) -> Classification:
         "experience": exp,
         "geography": geography(job),
         "restrictions": employment(job),
-        "workplace": finding(
-            "UNVERIFIED" if job.workplace_type == "unknown" else "ELIGIBLE",
-            job.workplace_type,
-            "normalized_workplace",
-            "workplace_type",
-        ),
+        "workplace": workplace(job),
     }
     status = requirements(
         list(decisions.values()), "All independent screening dimensions apply"

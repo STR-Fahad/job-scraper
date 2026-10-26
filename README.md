@@ -283,11 +283,13 @@ No external requests, LLMs, matching, or dashboard are involved.
   restrictions, stale results, or conflicting source classifications. These jobs
   are retained and included unless explicitly filtered out.
 
-Remote does **not** mean Pakistan-eligible. Explicit candidate-territory fields
-or direct applicant-facing statements can establish geography; office locations
-alone cannot establish remote hiring eligibility. Onsite/hybrid foreign attendance
-can exclude working from Pakistan. Pakistani onsite/hybrid locations still need
-personal city/commute review. Time-zone constraints require review. Empty country
+Remote does **not** mean Pakistan-eligible. The workplace screen accepts fully
+remote jobs, rejects hybrid and onsite jobs even when their office is in Pakistan,
+and leaves unknown arrangements UNVERIFIED. Explicit mandatory office attendance
+in a description rejects a job even if an API labels it remote; optional office
+visits do not. Candidate-territory fields or direct applicant-facing statements
+can establish geography; office locations alone cannot establish remote hiring
+eligibility. Time-zone constraints require review. Empty country
 lists do not imply worldwide hiring. “No sponsorship” does not prove exclusion:
 the candidate's sponsorship needs are unknown.
 
@@ -320,10 +322,14 @@ Classifications live in the additive `job_classifications` table, separate from
 job/source payloads. Its creation first makes an integrity-checked SQLite backup
 in the database's `backups` folder. It leaves collection schema version 2 intact
 and reuses the existing database writer lock. Results include rules version
-`pakistan-0-3-v3.1`; changing rules requires bumping that version. Content or lifecycle
+`pakistan-0-3-v3.4`; changing rules requires bumping that version. Content or lifecycle
 changes invalidate saved results, which appear as UNVERIFIED until `process`
 runs again. Metadata-only refreshes do not force reprocessing. Source variants
 retain separate evidence; differing eligibility outcomes become UNVERIFIED.
+When sources disagree, a definite exclusion outranks another source's missing
+evidence for that same dimension. Opposing positive and negative claims remain
+UNVERIFIED. Each source's quote and identity remain in `variants`, and the
+combined decision appears in `merged_decisions`.
 The additive `job_classification_history` migration backs up the database and
 copies every existing classification unchanged before new rules run. SQLite
 triggers append each new/revised result; unchanged runs add nothing. Historical

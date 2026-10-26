@@ -86,7 +86,8 @@ def test_exhausted_retries_and_pacing():
         http = HttpClient(client, retries=2, sleep=clock.sleep, clock=lambda: clock.now)
         with pytest.raises(CollectionError, match="exhausted"):
             http.get("https://example.test/jobs", interval=31)
-    assert sum(clock.waits) >= 62
+    # Adding separately rounded retry and pacing waits can land just below 62.
+    assert sum(clock.waits) >= 62 - 1e-9
 
 
 def test_invalid_json_stops():

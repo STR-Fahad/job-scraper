@@ -13,7 +13,55 @@ from .models import Job
 from .screening import CATEGORIES as CATEGORIES
 from .screening import classify
 
-VERSION = "pakistan-0-3-v3.1"
+VERSION = "pakistan-0-3-v3.4"
+
+DIMENSIONS = ("category", "experience", "geography", "restrictions", "workplace")
+
+
+def merge_variants(variants):
+    """Merge each requirement independently, keeping each source's evidence intact.
+
+    A source's silence cannot cancel another source's exclusion. Positive and
+    negative evidence for the same dimension is a real conflict and needs review.
+    """
+    merged = {}
+    for name in DIMENSIONS:
+        reports = [(variant, variant.get("decisions", {}).get(name, {})) for variant in variants]
+        states = {decision.get("status", "UNVERIFIED") for _, decision in reports}
+        conflict = ("ELIGIBLE" in states and "INELIGIBLE" in states) or any(
+            decision.get("conflict", False) for _, decision in reports
+        )
+        status = (
+            "UNVERIFIED"
+            if conflict
+            else "INELIGIBLE"
+            if "INELIGIBLE" in states
+            else "ELIGIBLE"
+            if states == {"ELIGIBLE"}
+            else "UNVERIFIED"
+        )
+        merged[name] = {
+            "status": status,
+            "conflict": conflict,
+            "sources": [
+                {
+                    "source": variant["source"],
+                    "board": variant["board"],
+                    "source_id": variant["source_id"],
+                    "status": decision.get("status", "UNVERIFIED"),
+                }
+                for variant, decision in reports
+            ],
+        }
+    statuses = {item["status"] for item in merged.values()}
+    overall = (
+        "INELIGIBLE"
+        if "INELIGIBLE" in statuses
+        else "UNVERIFIED"
+        if "UNVERIFIED" in statuses
+        else "ELIGIBLE"
+    )
+    return merged, overall
 
 
 def ensure_schema(store):
@@ -120,13 +168,14 @@ def process_jobs(store):
                         **result,
                     }
                 )
-            states = {v["status"] for v in variants}
-            status = next(iter(states)) if len(states) == 1 else "UNVERIFIED"
+            merged, status = merge_variants(variants)
             result = {
                 "status": status,
                 "categories": sorted({c for v in variants for c in v["categories"]}),
                 "variants": variants,
-                "source_conflict": len(states) > 1,
+                "merged_decisions": merged,
+                "source_conflict": len({v["status"] for v in variants}) > 1
+                or any(item["conflict"] for item in merged.values()),
                 "profile": {
                     "working_from": "Pakistan",
                     "experience_years": [0, 3],

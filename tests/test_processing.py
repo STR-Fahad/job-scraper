@@ -76,7 +76,7 @@ def test_arrangement_is_preserved(workplace):
     result = classify(candidate(workplace_type=workplace, description=""))
     assert result.workplace_type == workplace
     assert result.decisions["geography"].status == "UNVERIFIED"
-    assert result.status == "UNVERIFIED"
+    assert result.status == ("INELIGIBLE" if workplace in {"hybrid", "onsite"} else "UNVERIFIED")
 
 
 @pytest.mark.parametrize(

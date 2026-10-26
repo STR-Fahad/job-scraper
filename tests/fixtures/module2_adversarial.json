@@ -132,7 +132,7 @@
         "Lahore, Pakistan"
       ]
     },
-    "expected": "ELIGIBLE"
+    "expected": "INELIGIBLE"
   },
   {
     "name": "US work authorization unknown candidate",
