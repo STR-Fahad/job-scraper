@@ -7,7 +7,7 @@ name = "personal-job-scraper"
 version = "0.1.0"
 description = "Public job API collectors with local SQLite storage"
 requires-python = ">=3.13"
-dependencies = ["httpx>=0.28,<0.29", "beautifulsoup4>=4.13,<5", "pydantic>=2.10,<3", "pycountry>=24.6,<27"]
+dependencies = ["httpx>=0.28,<0.29", "beautifulsoup4>=4.13,<5", "pydantic>=2.10,<3", "pycountry>=24.6,<27", "google-genai>=1.0,<2"]
 
 [project.optional-dependencies]
 test = ["pytest>=8.3,<10", "ruff>=0.11,<1"]

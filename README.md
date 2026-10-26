@@ -1,5 +1,30 @@
 # Personal Job Collection Module
 
+## Gemini API connection
+
+The optional `gemini-check` command uses the official `google-genai` SDK and sends
+one synthetic prompt. It does not read stored jobs, run matching, or alter the
+collection and eligibility modules. The default model is `gemini-3.5-flash-lite`;
+set `GEMINI_MODEL` or pass `--model` to change it.
+
+Create a key at [Google AI Studio](https://aistudio.google.com/app/apikey). In a
+local PowerShell terminal, run `./scripts/setup_gemini_key.ps1` and paste the key
+at its hidden prompt. Do not put the key in chat, source files, or a Git commit.
+The script stores it in your Windows user environment; new terminals inherit it.
+Then test with:
+
+```powershell
+Set-Location 'C:\job scraper'
+.\.venv\Scripts\python.exe -m job_scraper gemini-check
+.\.venv\Scripts\python.exe -m job_scraper gemini-check --model gemini-3.8-flash
+```
+
+The command prints only a status and model name. API failures also report the HTTP
+status and a safe category. It never prints API error messages, headers, or bodies.
+The probe uses the SDK's `v1beta` Gemini Developer API endpoint and allows up to
+120 seconds per request. A `temporary_server` result (HTTP 5xx) can be retried
+later; the SDK handles transient retries automatically.
+
 Python 3.13, HTTPX, BeautifulSoup, Pydantic and SQLite. Six public-API collectors
 share an interface, validated records, host pacing, transactional persistence and
 lifecycle tracking. No LLM analysis, CV matching, dashboard or application submission.

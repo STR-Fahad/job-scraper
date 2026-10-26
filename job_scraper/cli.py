@@ -11,6 +11,7 @@ from pydantic import ValidationError
 from .collectors import COLLECTORS
 from .config import load_settings
 from .discovery import discover
+from .gemini import check_connection
 from .http import CollectionError, HttpClient
 from .processing import CATEGORIES, inspect_results, process_jobs
 from .registry import approve_board, effective_sources, set_enabled
@@ -61,9 +62,15 @@ def main(argv=None):
     results.add_argument("--category", choices=list(CATEGORIES))
     results.add_argument("--job-id", type=int)
     results.add_argument("--include-history", action="store_true")
+    gemini_check = sub.add_parser("gemini-check", help="Test Gemini using synthetic data only")
+    gemini_check.add_argument("--model", help="Override GEMINI_MODEL for this check")
     for item in (discovery, sources, jobs, migration, processing, results):
         item.add_argument("--config", type=Path, default=Path("config.toml"))
     args = parser.parse_args(argv)
+    if args.command == "gemini-check":
+        output = check_connection(args.model)
+        print(json.dumps(output, indent=2))
+        return 0 if output["status"] == "connected" else 1
     logging.basicConfig(
         level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s"
     )
