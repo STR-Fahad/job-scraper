@@ -250,3 +250,95 @@ Coverage includes all six collectors, normalization, pagination, retry recovery,
 host cooldown persistence, source failures, lifecycle transitions and partial-scan
 safety, company discovery, old-data migration, deduplication and process locking.
 Live validation evidence is retained separately under `work/hardening`.
+# Module 2: processing and eligibility
+
+Run from `C:\job scraper` after collecting jobs:
+
+```powershell
+.\.venv\Scripts\python.exe -m job_scraper process
+.\.venv\Scripts\python.exe -m job_scraper results --status UNVERIFIED
+.\.venv\Scripts\python.exe -m job_scraper results --status ELIGIBLE --category Python
+.\.venv\Scripts\python.exe -m job_scraper results --job-id 1 --include-history
+```
+
+Both commands accept `--config path\to\config.toml` and emit JSON. `process`
+classifies every stored logical job, reports status counts, and skips unchanged
+inputs. `results` filters by status, category, or job ID and includes exact source
+quotes, field names, rules, processing timestamp, and source-specific decisions.
+Categories: backend, full-stack, Rails, Python, AI/ML, LLM, data engineering, DevOps.
+Use quotes for categories with spaces. Multiple categories can apply.
+
+The fixed screening profile is **working from Pakistan with a target experience
+range of 0–3 years**. This is a range-based shortlist, not proof that a particular
+applicant has the required experience. Citizenship, residency rights, foreign work
+authorization, sponsorship needs, and working-hour availability remain unknown.
+No external requests, LLMs, matching, or dashboard are involved.
+
+* **ELIGIBLE:** all screening dimensions have positive evidence, including
+  resolved employment and authorization conditions. This is
+  an assessment of the posting, not independent verification of hiring legality.
+* **INELIGIBLE:** a supported requirement excludes this profile, such as a
+  required minimum above three years or a clearly restricted foreign territory.
+* **UNVERIFIED:** missing information, ambiguous language, unresolved employment
+  restrictions, stale results, or conflicting source classifications. These jobs
+  are retained and included unless explicitly filtered out.
+
+Remote does **not** mean Pakistan-eligible. Explicit candidate-territory fields
+or direct applicant-facing statements can establish geography; office locations
+alone cannot establish remote hiring eligibility. Onsite/hybrid foreign attendance
+can exclude working from Pakistan. Pakistani onsite/hybrid locations still need
+personal city/commute review. Time-zone constraints require review. Empty country
+lists do not imply worldwide hiring. “No sponsorship” does not prove exclusion:
+the candidate's sponsorship needs are unknown.
+
+A definite incompatible requirement takes precedence over unrelated unknown
+requirements (for example US-only hiring plus unknown schedule availability).
+Genuinely contradictory permission/exclusion claims about the same territory
+remain UNVERIFIED. “Anywhere in the EU” means EU-only, not worldwide. Country
+names and codes use exact ISO lookups from [pycountry](https://github.com/pycountry/pycountry);
+invalid codes and ambiguous business regions remain unknown. No fuzzy geocoding
+or assumption from a city name is used.
+
+Missing citizenship or work authorization remains UNVERIFIED. Explicit permitted
+Pakistan engagement, citizenship neutrality, and a waiver of foreign authorization
+can together resolve the employment dimension; no special phrase is required.
+Any additional sponsorship, residency, clearance or contractual restriction is
+evaluated independently. A geographic invitation alone is insufficient.
+
+Rules are intentionally conservative and English-focused. They recognize numeric
+experience ranges and months, avoid preferred-only requirements and common company
+history statements, and keep unfamiliar wording unverified. Minimums, upper bounds,
+optional sections, alternative skills and degree-based experience credits are
+distinguished. Degree credits remain UNVERIFIED when the applicant's degree is
+unknown. Category evidence must describe relevant engineering work; incidental
+and negated technologies in sales/mechanical roles cannot establish relevance.
+Category keywords require an appropriate engineering/developer title;
+generic or unfamiliar titles remain unverified. These rules do not comprehend
+every possible sentence or country/region name. Human review remains necessary.
+
+Classifications live in the additive `job_classifications` table, separate from
+job/source payloads. Its creation first makes an integrity-checked SQLite backup
+in the database's `backups` folder. It leaves collection schema version 2 intact
+and reuses the existing database writer lock. Results include rules version
+`pakistan-0-3-v3.1`; changing rules requires bumping that version. Content or lifecycle
+changes invalidate saved results, which appear as UNVERIFIED until `process`
+runs again. Metadata-only refreshes do not force reprocessing. Source variants
+retain separate evidence; differing eligibility outcomes become UNVERIFIED.
+The additive `job_classification_history` migration backs up the database and
+copies every existing classification unchanged before new rules run. SQLite
+triggers append each new/revised result; unchanged runs add nothing. Historical
+snapshots survive job deduplication and retain source identities in their JSON.
+Current results still cascade safely during merges; surviving changed jobs are
+reprocessed on the next run. History can be inspected with SQL:
+
+```sql
+SELECT job_id, rules_version, processed_at, result
+FROM job_classification_history WHERE job_id = 1 ORDER BY id;
+```
+
+Normal results use the existing active/listed/unexpired discovery policy.
+`--include-history` exposes closed, expired, unknown-lifecycle, and unlisted records
+with their lifecycle state; eligibility never reactivates them. In particular,
+legacy jobs migrated with unknown lifecycle stay hidden until collection confirms
+them. Opening storage continues its existing expiry evaluation; processing does
+not rewrite collected job content or source metadata.

@@ -12,6 +12,7 @@ from .collectors import COLLECTORS
 from .config import load_settings
 from .discovery import discover
 from .http import CollectionError, HttpClient
+from .processing import CATEGORIES, inspect_results, process_jobs
 from .registry import approve_board, effective_sources, set_enabled
 from .runner import collect
 from .storage import Store
@@ -50,7 +51,17 @@ def main(argv=None):
     jobs = sub.add_parser("jobs", help="List active, listed jobs; history is opt-in")
     jobs.add_argument("--include-history", action="store_true")
     migration = sub.add_parser("migrate", help="Back up and safely migrate the configured database")
-    for item in (discovery, sources, jobs, migration):
+    processing = sub.add_parser(
+        "process", help="Classify stored jobs for a Pakistan-based 0–3-year profile"
+    )
+    results = sub.add_parser(
+        "results", help="Filter classifications with evidence; stale results stay unverified"
+    )
+    results.add_argument("--status", choices=["ELIGIBLE", "INELIGIBLE", "UNVERIFIED"])
+    results.add_argument("--category", choices=list(CATEGORIES))
+    results.add_argument("--job-id", type=int)
+    results.add_argument("--include-history", action="store_true")
+    for item in (discovery, sources, jobs, migration, processing, results):
         item.add_argument("--config", type=Path, default=Path("config.toml"))
     args = parser.parse_args(argv)
     logging.basicConfig(
@@ -63,6 +74,16 @@ def main(argv=None):
             with Store(settings.database) as store:
                 if args.command == "jobs":
                     output = store.list_jobs(args.include_history)
+                elif args.command == "process":
+                    output = process_jobs(store)
+                elif args.command == "results":
+                    output = inspect_results(
+                        store,
+                        status=args.status,
+                        category=args.category,
+                        job_id=args.job_id,
+                        include_history=args.include_history,
+                    )
                 elif args.command == "migrate":
                     output = {
                         "schema_version": store.db.execute("PRAGMA user_version").fetchone()[0],

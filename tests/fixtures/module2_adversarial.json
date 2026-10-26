@@ -1,0 +1,403 @@
+[
+  {
+    "name": "Pakistan explicit unrestricted",
+    "input": {
+      "source": "remotive",
+      "source_id": "probe",
+      "company": "Fixture",
+      "title": "Backend Python Engineer",
+      "workplace_type": "remote",
+      "source_url": "https://example.test/job",
+      "attribution": "Fixture",
+      "attribution_url": "https://example.test",
+      "description": "2 years experience required. Work from Pakistan. No employment restrictions."
+    },
+    "expected": "ELIGIBLE"
+  },
+  {
+    "name": "Pakistan ordinary clear posting",
+    "input": {
+      "source": "remotive",
+      "source_id": "probe",
+      "company": "Fixture",
+      "title": "Backend Python Engineer",
+      "workplace_type": "remote",
+      "source_url": "https://example.test/job",
+      "attribution": "Fixture",
+      "attribution_url": "https://example.test",
+      "description": "2 years experience required. This remote role is open to applicants based in Pakistan. No employment restrictions."
+    },
+    "expected": "ELIGIBLE"
+  },
+  {
+    "name": "Worldwide unclear contractor terms",
+    "input": {
+      "source": "remotive",
+      "source_id": "probe",
+      "company": "Fixture",
+      "title": "Backend Python Engineer",
+      "workplace_type": "remote",
+      "source_url": "https://example.test/job",
+      "attribution": "Fixture",
+      "attribution_url": "https://example.test",
+      "description": "2 years experience required. Contractor-only. Residency requirements discussed at interview.",
+      "restrictions": {
+        "candidate_required_location": "Worldwide"
+      }
+    },
+    "expected": "UNVERIFIED"
+  },
+  {
+    "name": "Worldwide missing restrictions",
+    "input": {
+      "source": "remotive",
+      "source_id": "probe",
+      "company": "Fixture",
+      "title": "Backend Python Engineer",
+      "workplace_type": "remote",
+      "source_url": "https://example.test/job",
+      "attribution": "Fixture",
+      "attribution_url": "https://example.test",
+      "description": "2 years experience required. ",
+      "restrictions": {
+        "candidate_required_location": "Worldwide"
+      }
+    },
+    "expected": "UNVERIFIED"
+  },
+  {
+    "name": "US-only structured",
+    "input": {
+      "source": "remotive",
+      "source_id": "probe",
+      "company": "Fixture",
+      "title": "Backend Python Engineer",
+      "workplace_type": "remote",
+      "source_url": "https://example.test/job",
+      "attribution": "Fixture",
+      "attribution_url": "https://example.test",
+      "description": "2 years experience required. ",
+      "restrictions": {
+        "candidate_required_location": "United States"
+      }
+    },
+    "expected": "INELIGIBLE"
+  },
+  {
+    "name": "US-only prose",
+    "input": {
+      "source": "remotive",
+      "source_id": "probe",
+      "company": "Fixture",
+      "title": "Backend Python Engineer",
+      "workplace_type": "remote",
+      "source_url": "https://example.test/job",
+      "attribution": "Fixture",
+      "attribution_url": "https://example.test",
+      "description": "2 years experience required. US-only."
+    },
+    "expected": "INELIGIBLE"
+  },
+  {
+    "name": "Hybrid Germany",
+    "input": {
+      "source": "remotive",
+      "source_id": "probe",
+      "company": "Fixture",
+      "title": "Backend Python Engineer",
+      "workplace_type": "hybrid",
+      "source_url": "https://example.test/job",
+      "attribution": "Fixture",
+      "attribution_url": "https://example.test",
+      "description": "2 years experience required. ",
+      "location": [
+        "Berlin, Germany"
+      ]
+    },
+    "expected": "INELIGIBLE"
+  },
+  {
+    "name": "Hybrid Pakistan unrestricted",
+    "input": {
+      "source": "remotive",
+      "source_id": "probe",
+      "company": "Fixture",
+      "title": "Backend Python Engineer",
+      "workplace_type": "hybrid",
+      "source_url": "https://example.test/job",
+      "attribution": "Fixture",
+      "attribution_url": "https://example.test",
+      "description": "2 years experience required. No employment restrictions.",
+      "location": [
+        "Lahore, Pakistan"
+      ]
+    },
+    "expected": "ELIGIBLE"
+  },
+  {
+    "name": "US work authorization unknown candidate",
+    "input": {
+      "source": "remotive",
+      "source_id": "probe",
+      "company": "Fixture",
+      "title": "Backend Python Engineer",
+      "workplace_type": "remote",
+      "source_url": "https://example.test/job",
+      "attribution": "Fixture",
+      "attribution_url": "https://example.test",
+      "description": "2 years experience required. Must be authorized to work in the US."
+    },
+    "expected": "UNVERIFIED"
+  },
+  {
+    "name": "Explicit cannot employ from Pakistan",
+    "input": {
+      "source": "remotive",
+      "source_id": "probe",
+      "company": "Fixture",
+      "title": "Backend Python Engineer",
+      "workplace_type": "remote",
+      "source_url": "https://example.test/job",
+      "attribution": "Fixture",
+      "attribution_url": "https://example.test",
+      "description": "2 years experience required. We cannot employ anyone working from Pakistan due to employment authorization restrictions."
+    },
+    "expected": "INELIGIBLE"
+  },
+  {
+    "name": "Irrelevant accountant",
+    "input": {
+      "source": "remotive",
+      "source_id": "probe",
+      "company": "Fixture",
+      "title": "Accountant",
+      "workplace_type": "remote",
+      "source_url": "https://example.test/job",
+      "attribution": "Fixture",
+      "attribution_url": "https://example.test",
+      "description": "2 years experience required. Work from Pakistan. No employment restrictions."
+    },
+    "expected": "UNVERIFIED"
+  },
+  {
+    "name": "Sales engineer mentions Python",
+    "input": {
+      "source": "remotive",
+      "source_id": "probe",
+      "company": "Fixture",
+      "title": "Sales Engineer",
+      "workplace_type": "remote",
+      "source_url": "https://example.test/job",
+      "attribution": "Fixture",
+      "attribution_url": "https://example.test",
+      "description": "2 years experience required. Sell Python tools to enterprise accounts. Work from Pakistan. No employment restrictions."
+    },
+    "expected": "UNVERIFIED"
+  },
+  {
+    "name": "Negated Python skill",
+    "input": {
+      "source": "remotive",
+      "source_id": "probe",
+      "company": "Fixture",
+      "title": "Mechanical Engineer",
+      "workplace_type": "remote",
+      "source_url": "https://example.test/job",
+      "attribution": "Fixture",
+      "attribution_url": "https://example.test",
+      "description": "2 years experience required. Python is not used in this role. Work from Pakistan. No employment restrictions."
+    },
+    "expected": "UNVERIFIED"
+  },
+  {
+    "name": "Experience upper bound",
+    "input": {
+      "source": "remotive",
+      "source_id": "probe",
+      "company": "Fixture",
+      "title": "Backend Python Engineer",
+      "workplace_type": "remote",
+      "source_url": "https://example.test/job",
+      "attribution": "Fixture",
+      "attribution_url": "https://example.test",
+      "description": "At most 5 years experience. Work from Pakistan. No employment restrictions."
+    },
+    "expected": "ELIGIBLE"
+  },
+  {
+    "name": "Optional heading variant",
+    "input": {
+      "source": "remotive",
+      "source_id": "probe",
+      "company": "Fixture",
+      "title": "Backend Python Engineer",
+      "workplace_type": "remote",
+      "source_url": "https://example.test/job",
+      "attribution": "Fixture",
+      "attribution_url": "https://example.test",
+      "description": "2 years experience required. Work from Pakistan. No employment restrictions.\nBonus skills:\n5 years experience"
+    },
+    "expected": "ELIGIBLE"
+  },
+  {
+    "name": "Required apostrophe experience",
+    "input": {
+      "source": "remotive",
+      "source_id": "probe",
+      "company": "Fixture",
+      "title": "Backend Python Engineer",
+      "workplace_type": "remote",
+      "source_url": "https://example.test/job",
+      "attribution": "Fixture",
+      "attribution_url": "https://example.test",
+      "description": "5 years' experience required. Work from Pakistan. No employment restrictions."
+    },
+    "expected": "INELIGIBLE"
+  },
+  {
+    "name": "Invalid country ZZ code",
+    "input": {
+      "source": "remotive",
+      "source_id": "probe",
+      "company": "Fixture",
+      "title": "Backend Python Engineer",
+      "workplace_type": "remote",
+      "source_url": "https://example.test/job",
+      "attribution": "Fixture",
+      "attribution_url": "https://example.test",
+      "description": "2 years experience required. ",
+      "restrictions": {
+        "candidate_required_location": "ZZ"
+      }
+    },
+    "expected": "UNVERIFIED"
+  },
+  {
+    "name": "Must be based in the US",
+    "input": {
+      "source": "remotive",
+      "source_id": "probe",
+      "company": "Fixture",
+      "title": "Backend Python Engineer",
+      "workplace_type": "remote",
+      "source_url": "https://example.test/job",
+      "attribution": "Fixture",
+      "attribution_url": "https://example.test",
+      "description": "2 years experience required. Must be based in the US."
+    },
+    "expected": "INELIGIBLE"
+  },
+  {
+    "name": "EU-only anywhere prefix",
+    "input": {
+      "source": "remotive",
+      "source_id": "probe",
+      "company": "Fixture",
+      "title": "Backend Python Engineer",
+      "workplace_type": "remote",
+      "source_url": "https://example.test/job",
+      "attribution": "Fixture",
+      "attribution_url": "https://example.test",
+      "description": "2 years experience. Work from anywhere in the EU. No employment restrictions."
+    },
+    "expected": "INELIGIBLE"
+  },
+  {
+    "name": "US-only with timezone constraint",
+    "input": {
+      "source": "remotive",
+      "source_id": "probe",
+      "company": "Fixture",
+      "title": "Backend Python Engineer",
+      "workplace_type": "remote",
+      "source_url": "https://example.test/job",
+      "attribution": "Fixture",
+      "attribution_url": "https://example.test",
+      "description": "2 years experience.",
+      "restrictions": {
+        "locationRestrictions": [
+          "United States"
+        ],
+        "timezoneRestrictions": [
+          -5
+        ]
+      }
+    },
+    "expected": "INELIGIBLE"
+  },
+  {
+    "name": "Required experience with skill alternatives",
+    "input": {
+      "source": "remotive",
+      "source_id": "probe",
+      "company": "Fixture",
+      "title": "Backend Python Engineer",
+      "workplace_type": "remote",
+      "source_url": "https://example.test/job",
+      "attribution": "Fixture",
+      "attribution_url": "https://example.test",
+      "description": "5 years experience in Python or Java. Work from Pakistan. No employment restrictions."
+    },
+    "expected": "INELIGIBLE"
+  },
+  {
+    "name": "Required and preferred minima in one clause",
+    "input": {
+      "source": "remotive",
+      "source_id": "probe",
+      "company": "Fixture",
+      "title": "Backend Python Engineer",
+      "workplace_type": "remote",
+      "source_url": "https://example.test/job",
+      "attribution": "Fixture",
+      "attribution_url": "https://example.test",
+      "description": "5 years industry experience, ideally 2 years experience in customer support. Work from Pakistan. No employment restrictions."
+    },
+    "expected": "INELIGIBLE"
+  },
+  {
+    "name": "Pakistan plain phrase supported",
+    "input": {
+      "source": "remotive",
+      "source_id": "probe",
+      "company": "Fixture",
+      "title": "Backend Python Engineer",
+      "workplace_type": "remote",
+      "source_url": "https://example.test/job",
+      "attribution": "Fixture",
+      "attribution_url": "https://example.test",
+      "description": "2 years experience required. Work from Pakistan. No employment restrictions."
+    },
+    "expected": "ELIGIBLE"
+  },
+  {
+    "name": "Remote alone without geography",
+    "input": {
+      "source": "remotive",
+      "source_id": "probe",
+      "company": "Fixture",
+      "title": "Backend Python Engineer",
+      "workplace_type": "remote",
+      "source_url": "https://example.test/job",
+      "attribution": "Fixture",
+      "attribution_url": "https://example.test",
+      "description": "2 years experience required. No employment restrictions."
+    },
+    "expected": "UNVERIFIED"
+  },
+  {
+    "name": "Masters credit can meet experience minimum",
+    "input": {
+      "source": "remotive",
+      "source_id": "probe",
+      "company": "Fixture",
+      "title": "Backend Python Engineer",
+      "workplace_type": "remote",
+      "source_url": "https://example.test/job",
+      "attribution": "Fixture",
+      "attribution_url": "https://example.test",
+      "description": "Minimum of 5 years experience required. A Master's degree may count as two years of experience. Work from Pakistan. No employment restrictions."
+    },
+    "expected": "UNVERIFIED"
+  }
+]
