@@ -13,6 +13,17 @@ from .config import load_settings
 from .discovery import discover
 from .gemini import check_connection
 from .http import CollectionError, HttpClient
+from .matching import (
+    analyze,
+    approve_profile,
+    candidates,
+    export_profile,
+    import_profile,
+    latest_profile,
+)
+from .matching import (
+    results as match_results,
+)
 from .processing import CATEGORIES, inspect_results, process_jobs
 from .registry import approve_board, effective_sources, set_enabled
 from .runner import collect
@@ -64,7 +75,18 @@ def main(argv=None):
     results.add_argument("--include-history", action="store_true")
     gemini_check = sub.add_parser("gemini-check", help="Test Gemini using synthetic data only")
     gemini_check.add_argument("--model", help="Override GEMINI_MODEL for this check")
-    for item in (discovery, sources, jobs, migration, processing, results):
+    profile = sub.add_parser("profile", help="Import and review a local PDF CV")
+    profile.add_argument("action", choices=["import", "preview", "export", "approve"])
+    profile.add_argument("--file", type=Path, help="PDF for import; reviewed JSON for approve")
+    profile.add_argument("--output", type=Path, default=Path("data/candidate-profile-review.json"))
+    matching = sub.add_parser("match", help="Preview or analyze technical matches")
+    matching.add_argument("action", choices=["candidates", "analyze", "results"])
+    matching.add_argument("--live", action="store_true", help="Authorize billable Gemini requests")
+    matching.add_argument("--limit", type=positive_int)
+    matching.add_argument("--job-id", type=int)
+    matching.add_argument("--include-history", action="store_true")
+    matching.add_argument("--model", help="Override GEMINI_MODEL")
+    for item in (discovery, sources, jobs, migration, processing, results, profile, matching):
         item.add_argument("--config", type=Path, default=Path("config.toml"))
     args = parser.parse_args(argv)
     if args.command == "gemini-check":
@@ -97,6 +119,47 @@ def main(argv=None):
                         "jobs": store.db.execute("SELECT count(*) FROM jobs").fetchone()[0],
                         "integrity": store.db.execute("PRAGMA integrity_check").fetchone()[0],
                     }
+                elif args.command == "profile":
+                    if args.action == "import":
+                        if not args.file:
+                            raise ValueError("profile import requires --file PDF")
+                        output = import_profile(store, args.file)
+                    elif args.action == "preview":
+                        output = latest_profile(store)
+                    elif args.action == "export":
+                        output = export_profile(store, args.output)
+                    else:
+                        if not args.file:
+                            raise ValueError("profile approve requires --file reviewed JSON")
+                        output = approve_profile(store, args.file)
+                elif args.command == "match":
+                    if args.action == "candidates":
+                        queue = candidates(
+                            store, include_history=args.include_history, job_id=args.job_id
+                        )
+                        output = {
+                            "count": len(queue),
+                            "candidates": queue[: args.limit or 20],
+                            "live_requests": 0,
+                        }
+                    elif args.action == "analyze":
+                        output = analyze(
+                            store,
+                            settings.matching,
+                            live=args.live,
+                            limit=args.limit,
+                            model=args.model,
+                            include_history=args.include_history,
+                            job_id=args.job_id,
+                        )
+                    else:
+                        output = match_results(
+                            store,
+                            settings.matching,
+                            include_history=args.include_history,
+                            job_id=args.job_id,
+                            model=args.model,
+                        )
                 elif args.command == "sources":
                     if args.action == "list":
                         output = {

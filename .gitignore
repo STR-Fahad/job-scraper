@@ -5,6 +5,10 @@ __pycache__/
 .pytest_cache/
 .ruff_cache/
 data/
+profiles/
+*.[Pp][Dd][Ff]
+candidate-profile*.json
+*profile-review*.json
 work/
 logs/
 config.local.toml

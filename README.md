@@ -25,9 +25,73 @@ The probe uses the SDK's `v1beta` Gemini Developer API endpoint and allows up to
 120 seconds per request. A `temporary_server` result (HTTP 5xx) can be retried
 later; the SDK handles transient retries automatically.
 
+## Module 3B.1: local CV profile and explainable matching
+
+Import a text-based PDF CV only by an explicit path. The original PDF stays local;
+PDFs, `data/`, and `profiles/` are Git-ignored. Extraction stores only a structured
+professional draft. Contact lines, email addresses, phone numbers, URLs, and
+recognizable street addresses are removed. Review the result carefully: automated
+redaction cannot reliably recognize every form of personal information. Scanned
+PDFs need local OCR first. No experience years or work authorization are inferred.
+
+```powershell
+Set-Location 'C:\job scraper'
+.\.venv\Scripts\python.exe -m job_scraper profile import --file 'C:\path\to\your-cv.pdf'
+.\.venv\Scripts\python.exe -m job_scraper profile preview
+.\.venv\Scripts\python.exe -m job_scraper profile export
+# Edit data/candidate-profile-review.json locally; remove or correct anything inaccurate.
+.\.venv\Scripts\python.exe -m job_scraper profile approve --file data/candidate-profile-review.json
+.\.venv\Scripts\python.exe -m job_scraper match candidates --limit 20
+.\.venv\Scripts\python.exe -m job_scraper match analyze      # Offline preview: no API request
+.\.venv\Scripts\python.exe -m job_scraper match analyze --live --limit 3
+.\.venv\Scripts\python.exe -m job_scraper match results
+```
+
+`--live` is required for billable Gemini calls. The default maximum is three
+requests per run and the hard maximum is five. Set `[matching]` in `config.toml`
+for `max_requests_per_run` (1–5), `retries` (0–3), and `timeout_seconds` (10–300).
+`GEMINI_MODEL` or `match analyze --model` selects the model; the default is
+`gemini-3.5-flash-lite`. A successful assessment is cached by job content,
+approved profile hash, model, screening version, prompt/schema version, and
+scoring weights. Failed calls are not cached. API rate limits stop the batch.
+
+The default queue includes only active, listed, relevant jobs that Module 2 marks
+ELIGIBLE or UNVERIFIED. It also checks engineering titles and descriptions when
+Module 2 could not establish a category. Use `--include-history` for explicitly
+labeled closed, expired, or unknown-lifecycle analysis; those jobs are not treated
+as active. An AI match never changes Module 2 eligibility.
+
+Gemini receives job-side evidence from at most 12,000 characters of each selected
+job description; longer descriptions are rejected before an API request so no
+requirements are silently truncated. It does not receive the PDF, approved profile, contact data,
+candidate skill catalog, raw provider payloads, or all jobs automatically. Python
+first preserves each logical source line or bullet with a stable R-number, section,
+source offset, and explicit technology inventory. Gemini classifies every supplied ID
+without generating skill names. Python rejects missing, invented, duplicate, and inconsistent IDs,
+then retrieves source text locally and selects CV support from the approved skill catalog,
+derives MATCHED, PARTIAL, UNMATCHED or UNVERIFIED, and compares numeric experience
+minimums with the approved total. Professional evidence can establish a direct
+match. A required skill supported only by a project earns PARTIAL; a preferred
+project skill may earn MATCHED. Ambiguous or listed-only evidence earns no
+confirmed match. A duty with multiple shared technical terms and hands-on CV
+evidence can earn transferable PARTIAL credit. Technologies are equivalent only
+through explicit aliases. Alternative requirements such as "at least one of"
+remain UNVERIFIED until their group meaning can be established safely.
+The 40/25/20/15 component weights are configurable. PARTIAL earns half of its
+component share; UNMATCHED and UNVERIFIED earn zero and remain distinguishable
+in the breakdown. A complete extraction can therefore earn zero when the
+candidate lacks or cannot verify the required qualifications. Missing skill
+requirements, duties, explicit numeric experience requirements, or unclassified
+source items reject the response. Absence of optional or
+unspecified categories does not invalidate an extraction. Inspect cited source
+text for nuanced qualifications.
+The requirement, response, prompt, evidence and scoring versions are included in the cache
+key, so earlier assessments become stale when these rules change.
+
 Python 3.13, HTTPX, BeautifulSoup, Pydantic and SQLite. Six public-API collectors
 share an interface, validated records, host pacing, transactional persistence and
-lifecycle tracking. No LLM analysis, CV matching, dashboard or application submission.
+lifecycle tracking. The matching module is offline by default; there is no
+dashboard or automatic application submission.
 
 ## Run on Windows
 

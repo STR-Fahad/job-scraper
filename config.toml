@@ -3,6 +3,17 @@ timeout_seconds = 30
 retries = 3
 max_retry_delay = 120
 
+[matching]
+max_requests_per_run = 3
+retries = 1
+timeout_seconds = 120
+
+[matching.weights]
+required_skills = 40
+experience = 25
+role_alignment = 20
+preferred_projects = 15
+
 [[sources]]
 source = "himalayas"
 max_pages = 100

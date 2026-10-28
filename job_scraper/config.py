@@ -46,6 +46,28 @@ class SourceConfig(BaseModel):
         return f"{self.region}:{self.board}" if self.source == "lever" else self.board
 
 
+class MatchingWeights(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    required_skills: int = Field(default=40, ge=0, le=100)
+    experience: int = Field(default=25, ge=0, le=100)
+    role_alignment: int = Field(default=20, ge=0, le=100)
+    preferred_projects: int = Field(default=15, ge=0, le=100)
+
+    @model_validator(mode="after")
+    def total_one_hundred(self):
+        if sum(self.model_dump().values()) != 100:
+            raise ValueError("matching weights must total 100")
+        return self
+
+
+class MatchingConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    max_requests_per_run: int = Field(default=3, ge=1, le=5)
+    retries: int = Field(default=1, ge=0, le=3)
+    timeout_seconds: int = Field(default=120, ge=10, le=300)
+    weights: MatchingWeights = Field(default_factory=MatchingWeights)
+
+
 class Settings(BaseModel):
     model_config = ConfigDict(extra="forbid")
     database: Path = Path("data/jobs.sqlite3")
@@ -53,6 +75,7 @@ class Settings(BaseModel):
     retries: int = Field(default=3, ge=0, le=8)
     max_retry_delay: float = Field(default=120, ge=1, le=3600)
     sources: list[SourceConfig]
+    matching: MatchingConfig = Field(default_factory=MatchingConfig)
 
     @model_validator(mode="after")
     def unique_registry(self):
