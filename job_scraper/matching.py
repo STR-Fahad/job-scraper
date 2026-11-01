@@ -14,7 +14,13 @@ from google import genai
 from google.genai import errors, types
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
-from .candidate import CandidateProfile, extract_pdf, profile_hash, profile_json
+from .candidate import (
+    CandidateProfile,
+    experience_summary,
+    extract_pdf,
+    profile_hash,
+    profile_json,
+)
 from .config import MatchingConfig
 from .evidence import (
     EVIDENCE_VERSION,
@@ -23,8 +29,8 @@ from .evidence import (
     build_segments,
     build_skill_catalog,
     canonical_skill,
-    minimum_years,
 )
+from .experience import minimum_months
 from .gemini import DEFAULT_MODEL, _safe_error
 from .processing import VERSION as SCREENING_VERSION
 from .processing import inspect_results
@@ -38,7 +44,7 @@ from .requirements import ClassifiedRequirements, extract_requirements, resolve_
 
 PROMPT_VERSION = "match-v9"
 ANALYSIS_SCHEMA_VERSION = "analysis-v7"
-SCORING_VERSION = "score-v5"
+SCORING_VERSION = "score-v6"
 MAX_JOB_CHARS = 12000
 COMPONENT_KINDS = {
     "required_skills": "req",
@@ -302,6 +308,17 @@ def _percent(value: Decimal) -> int:
     return int((value * 100).quantize(Decimal("1"), rounding=ROUND_HALF_UP))
 
 
+def _comparison(item: dict) -> dict:
+    return item.get("experience_comparison") or {}
+
+
+def _numeric_experience(item: dict) -> bool:
+    """A numeric experience finding. The quote alone ("18 months") has lost the wording
+    that identifies a month quantity, so the recorded comparison decides; rows saved before
+    comparisons existed fall back to reading the text."""
+    return bool(_comparison(item)) or minimum_months(item["text"]) is not None
+
+
 def _scored_items(items: list[dict], inventory) -> tuple[dict[str, list[dict]], list[dict]]:
     """Select the findings that enter each component; report every exclusion."""
     components = {name: [] for name in COMPONENT_KINDS}
@@ -326,7 +343,13 @@ def _scored_items(items: list[dict], inventory) -> tuple[dict[str, list[dict]], 
             key = (item["kind"], canonical_skill(item["text"]))
             if key in strictest and strictest[key] != index:
                 reason = "duplicate_skill_requirement"
-        elif item["kind"] == "exp" and general_years and minimum_years(item["text"]) is None:
+        elif item["kind"] == "exp" and _comparison(item).get("requirement_kind") in {
+            "preferred",
+            "maximum",
+        }:
+            # A preferred level or an upper bound is not a minimum to satisfy or miss.
+            reason = "experience_level_is_not_a_minimum"
+        elif item["kind"] == "exp" and general_years and not _numeric_experience(item):
             reason = "subsumed_by_numeric_experience_minimum"
         elif item["kind"] == "unresolved":
             # An unresolved line under an explicit heading is still a qualification:
@@ -501,7 +524,12 @@ def import_profile(store, path: Path) -> dict:
             "INSERT INTO candidate_profiles(created_at,approved,profile_hash,profile) VALUES (?,?,?,?)",
             (datetime.now(UTC).isoformat(), 0, profile_hash(profile), profile_json(profile)),
         ).lastrowid
-    return {"version": version, "approved": False, "profile": profile.model_dump()}
+    return {
+        "version": version,
+        "approved": False,
+        "experience": profile.experience_summary(),
+        "profile": profile.model_dump(),
+    }
 
 
 def latest_profile(store, *, approved_only=False) -> dict | None:
@@ -515,6 +543,8 @@ def latest_profile(store, *, approved_only=False) -> dict | None:
             "version": row["version"],
             "approved": bool(row["approved"]),
             "profile_hash": row["profile_hash"],
+            # Derived for display and comparison; the stored profile text is never rewritten.
+            "experience": experience_summary(json.loads(row["profile"])),
             "profile": json.loads(row["profile"]),
         }
         if row
@@ -537,7 +567,12 @@ def approve_profile(store, path: Path) -> dict:
             "INSERT INTO candidate_profiles(created_at,approved,profile_hash,profile) VALUES (?,?,?,?)",
             (datetime.now(UTC).isoformat(), 1, profile_hash(profile), serialized),
         ).lastrowid
-    return {"version": version, "approved": True, "profile_hash": profile_hash(profile)}
+    return {
+        "version": version,
+        "approved": True,
+        "profile_hash": profile_hash(profile),
+        "experience": profile.experience_summary(),
+    }
 
 
 def export_profile(store, path: Path) -> dict:
@@ -547,10 +582,11 @@ def export_profile(store, path: Path) -> dict:
     path.parent.mkdir(parents=True, exist_ok=True)
     if path.exists():
         raise ValueError("Review file already exists; choose another path")
-    path.write_text(
-        json.dumps(row["profile"], indent=2, ensure_ascii=False) + "\n", encoding="utf-8"
-    )
-    return {"path": str(path), "version": row["version"]}
+    # The review file shows experience in months (the canonical form); an older stored
+    # profile with decimal years is converted exactly. The stored row is not modified.
+    reviewed = CandidateProfile.model_validate(row["profile"]).model_dump()
+    path.write_text(json.dumps(reviewed, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    return {"path": str(path), "version": row["version"], "experience": row["experience"]}
 
 
 def _relevant(job: dict, classification: dict) -> bool:
@@ -641,7 +677,12 @@ def _rule_hash(config: MatchingConfig, *, scoring=None, evidence=None) -> str:
 def _assessment(classifications, inventory, profile_segments, profile, catalog, config) -> dict:
     """Production evidence resolution and scoring for validated item classifications."""
     resolved = resolve_classifications(
-        classifications, inventory, profile_segments, profile.experience_years, catalog
+        classifications,
+        inventory,
+        profile_segments,
+        None,
+        catalog,
+        experience_months=profile.experience_months,
     )
     return {
         **score_resolved(resolved, config, inventory),

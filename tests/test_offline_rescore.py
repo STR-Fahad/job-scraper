@@ -126,7 +126,7 @@ def test_rescore_matches_live_production_path_without_api(monkeypatch):
         assert len(rows) == 2 and tuple(rows[0]) == original
         new = json.loads(rows[1]["result"])
         assert rows[1]["rule_hash"] == matching._rule_hash(CONFIG) != original[7]
-        assert new["scoring_version"] == "score-v5" and new["assessment_mode"] == "offline_rescore"
+        assert new["scoring_version"] == "score-v6" and new["assessment_mode"] == "offline_rescore"
         assert new["provenance"]["source_assessment_id"] == original[0]
         assert new["provenance"]["source_scoring_version"] == "score-v4"
         assert json.loads(rows[1]["token_usage"]) == {}

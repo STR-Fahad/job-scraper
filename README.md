@@ -84,7 +84,31 @@ Years attached to a named technology ("3+ years of Python") are not established 
 the approved total and stay UNVERIFIED (UNMATCHED only for an explicitly
 professional minimum above the approved total).
 
-Scoring (`score-v5`) keeps the 40/25/20/15 weights. Each component earns
+Experience is held and compared in whole **months** and shown as years and months
+(15 months is "1 year, 3 months"; 6 is "6 months"; 24 is "2 years"). The approved total is
+a snapshot you approve: it is never recalculated from dates or the calendar, project and
+academic work is not added, and continued sections of one job are one period. A reviewed
+profile states it as `"experience_months": 15`. A profile that still says
+`"experience_years": 1.25` is read exactly (1.25 years is 15 months); a decimal that is not a
+whole number of months (1.3 years) is rounded **down**, never up, and reported. Stating both
+is accepted only if they agree. `profile preview` and the review file show months;
+re-approving an unchanged profile in months keeps the same profile hash, so saved
+assessments stay current. Job requirements such as "6 months", "1 year", "1.5 years",
+"2+ years", "2 years and 6 months" or "2-3 years" become whole months (a fractional minimum
+is rounded up), month quantities count only with experience wording nearby (a "6 month
+contract" is ignored), and each finding records required, approved and gap in months and in
+years and months. Preferred, range, maximum and "or equivalent" wording is labeled;
+years in a named technology are still not settled by total experience. Module 2 is unchanged.
+
+A numeric experience line is a **minimum** only when its own wording says so. A level
+stated as preferred ("ideally", "preferably", "nice to have", or under a Nice to have
+heading) and an upper bound ("up to", "at most") are compared and shown with their kind
+but are **not scored** as a minimum (`excluded_findings`: `experience_level_is_not_a_minimum`);
+"or equivalent" wording is MATCHED when the number is met and otherwise UNVERIFIED, never a
+confirmed gap; a preference elsewhere in the line ("3 years required, Python preferred")
+does not weaken a mandatory minimum. Durations that are not experience are ignored.
+
+Scoring (`score-v6`, evidence rules `evidence-v9`) keeps the 40/25/20/15 weights. Each component earns
 `weight × average(item value)` with MATCHED=1, PARTIAL=0.5, UNMATCHED=0 and
 UNVERIFIED=0. The headline `score` is earned points divided by the **applicable**
 weight, ×100, rounded half up. A component is applicable when it has scored
@@ -123,6 +147,75 @@ Python 3.13, HTTPX, BeautifulSoup, Pydantic and SQLite. Six public-API collector
 share an interface, validated records, host pacing, transactional persistence and
 lifecycle tracking. The matching module is offline by default; there is no
 dashboard or automatic application submission.
+
+## Module 3B.2: local rankings and manual eligibility review
+
+Rankings read stored data only. They make no Gemini request, run no collector and never
+recompute a score. A rank is **technical evidence fit with your approved profile**; it is
+not a hiring probability and not employment eligibility. Module 2 status and manual
+reviews are always shown beside the score, never merged into it.
+
+```powershell
+.\.venv\Scripts\python.exe -m job_scraper rank list                      # ranked, current assessments
+.\.venv\Scripts\python.exe -m job_scraper rank list --min-score 60 --confidence high --eligibility UNVERIFIED --source remotive --limit 10
+.\.venv\Scripts\python.exe -m job_scraper rank explain --job-id 22        # why a job sits where it does
+.\.venv\Scripts\python.exe -m job_scraper rank queue                      # relevant jobs without a current assessment
+.\.venv\Scripts\python.exe -m job_scraper rank queue --assessment-status stale
+.\.venv\Scripts\python.exe -m job_scraper rank list --include-history     # closed/unknown jobs, labeled not recommended
+.\.venv\Scripts\python.exe -m job_scraper rank list --json                # machine-readable
+.\.venv\Scripts\python.exe -m job_scraper review add --job-id 22 --status unresolved --explanation "Posting is silent on hiring countries"
+.\.venv\Scripts\python.exe -m job_scraper review add --job-id 22 --status evidence_supported --explanation "Careers page lists Pakistan" --evidence "https://example.com/careers"
+.\.venv\Scripts\python.exe -m job_scraper review show --job-id 22         # full history, oldest first
+.\.venv\Scripts\python.exe -m job_scraper review list                     # newest entry per job
+.\.venv\Scripts\python.exe -m job_scraper review list --outdated          # reviews that need reverification
+.\.venv\Scripts\python.exe -m job_scraper rank list --only-restricted     # only manually restricted jobs
+.\.venv\Scripts\python.exe -m job_scraper rank list --hide-restricted     # omit that section
+```
+
+Ranking population: relevant, active, listed jobs whose effective Module 2 status is
+ELIGIBLE or UNVERIFIED (a stale classification counts as UNVERIFIED; INELIGIBLE jobs are
+excluded). A job is ranked only when it has a **current** assessment: same job content,
+approved profile and current rule hash. Jobs with a stale or missing assessment appear
+only in `rank queue`, with no score (never a score of zero); stale scores are never used.
+
+Sort order (first row is best): recommended before historical; interpretation group
+(`high_score_strong_evidence`, `high_score_limited_evidence`, `low_score_confirmed_gaps`,
+`low_score_unresolved_evidence`); well-supported before thin postings; higher score; higher
+evidence coverage; more scored findings; fewer confirmed gaps; Module 2 ELIGIBLE before
+UNVERIFIED; lower job id. A posting is **thin** when its applicable weight is 60 or less or
+it has fewer than 4 scored findings, so a 100/100 from one skill and one duty is flagged
+(`low_applicable_weight`, `few_scored_findings`) and listed after well-supported matches in
+its group. Other flags: `low_evidence_coverage` (under 50%), `preferences_not_extracted`,
+`unmet_experience_minimum`, `eligibility_review_pending` (score 60 or more, Module 2 not
+ELIGIBLE, and no manual review citing evidence), `manual_review_confirmed_restricted`.
+A job whose newest review is a **current** `confirmed_restricted` is not recommended: it
+receives no rank number and is printed in a separate "Manually confirmed restricted - NOT
+recommended" section after the ranking. Its score, assessments and reviews are kept;
+`--hide-restricted` omits the section, `--only-restricted` shows only it, and
+`rank explain` always shows the job. Restricted jobs without an assessment are not queued
+for assessment. Nothing is promoted automatically, and Module 2 status never changes.
+
+Manual review statuses: `unresolved` (reviewed, eligibility still not established; no
+evidence needed), `evidence_supported` (you cite source evidence that the employer can
+engage a Pakistan-based worker) and `confirmed_restricted` (you cite evidence that it
+cannot). The two evidence statuses require `--evidence`, which is **your claim**: the
+application never fetches a URL or checks that the evidence says what you wrote.
+Entries are append-only
+(database triggers reject UPDATE and DELETE); the newest entry is the current view and
+older ones stay in `review show`. A review never edits Module 2 classifications, their
+history or assessments, and never turns a job ELIGIBLE. The review table is created on the
+first `review add`, after a verified backup in `data/backups/`.
+
+Each review stores a fingerprint of the job's source records (content and lifecycle) at
+review time. If the job no longer matches it, the review is **outdated**: every command shows
+`needs_reverification: job_content_changed` beside it, its eligibility claim is not applied
+to the changed job (a restriction stops excluding the job; an `evidence_supported` claim no
+longer clears the `eligibility_review_pending` flag; both add
+`manual_review_needs_reverification`), and the stored entry is never rewritten. The review
+is current again if the job returns to the same content or you record a new review; an
+older entry that a newer one replaced is marked `superseded`. An `unresolved` review makes
+no claim, so an outdated one stays `unresolved`. A review with no recorded fingerprint is
+treated as outdated. Module 2 rule changes are not tracked.
 
 ## Run on Windows
 

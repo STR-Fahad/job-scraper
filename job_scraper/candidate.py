@@ -5,9 +5,19 @@ import json
 import re
 from pathlib import Path
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    PrivateAttr,
+    ValidationError,
+    field_validator,
+    model_validator,
+)
 from pypdf import PdfReader
 from pypdf.errors import PdfReadError
+
+from .experience import format_months, months_from_years
 
 PROFILE_SCHEMA = "candidate-v1"
 SECTION = re.compile(
@@ -106,7 +116,56 @@ class CandidateProfile(BaseModel):
     education: list[ProfileEntry] = Field(default_factory=list)
     certifications: list[ProfileEntry] = Field(default_factory=list)
     technologies: list[str] = Field(default_factory=list)
-    experience_years: float | None = Field(default=None, ge=0, le=80)
+    # Canonical: whole months of approved professional experience, a snapshot supplied by
+    # the user. It is never recalculated from dates or the calendar.
+    experience_months: int | None = Field(default=None, ge=0, le=960)
+    # Legacy input only. It is converted to months, then derived from them (never an
+    # independent value) and never written back out.
+    experience_years: float | None = Field(default=None, ge=0, le=80, exclude=True)
+    _experience_source: str | None = PrivateAttr(default=None)
+    _experience_exact: bool = PrivateAttr(default=True)
+    _legacy_years: float | None = PrivateAttr(default=None)
+
+    @model_validator(mode="after")
+    def one_experience_value(self):
+        legacy = self.experience_years
+        if legacy is not None:
+            months, exact = months_from_years(legacy)
+            if self.experience_months is None:
+                self.experience_months = months
+                self._experience_source = "experience_years"
+                self._experience_exact = exact
+                self._legacy_years = legacy
+            elif not exact or months != self.experience_months:
+                raise ValueError(
+                    "experience_years and experience_months disagree; supply experience_months only"
+                )
+        if self._experience_source is None and self.experience_months is not None:
+            self._experience_source = "experience_months"
+        self.experience_years = (
+            None if self.experience_months is None else self.experience_months / 12
+        )
+        return self
+
+    @property
+    def experience_display(self) -> str | None:
+        return format_months(self.experience_months)
+
+    def experience_summary(self) -> dict:
+        """Months, display and provenance. Missing experience stays None, never zero."""
+        note = None
+        if not self._experience_exact:
+            note = (
+                f"{self._legacy_years} years is not a whole number of months; rounded down "
+                f"to {self.experience_months} months (never up)"
+            )
+        return {
+            "months": self.experience_months,
+            "display": self.experience_display,
+            "source": self._experience_source,
+            "exact": self._experience_exact,
+            "note": note,
+        }
 
     @field_validator("schema_version")
     @classmethod
@@ -132,7 +191,32 @@ def profile_json(profile: CandidateProfile) -> str:
 
 
 def profile_hash(profile: CandidateProfile) -> str:
-    return hashlib.sha256(profile_json(profile).encode()).hexdigest()
+    """Hash of the profile content, independent of how experience is represented.
+
+    Experience is hashed as years (months / 12), the way profiles were stored before months
+    existed, so re-approving the same profile in months keeps the same hash and does not make
+    saved assessments stale. The stored text itself uses months.
+    """
+    profile_json(profile)  # contact-data and size checks
+    data = profile.model_dump()
+    months = data.pop("experience_months")
+    data["experience_years"] = None if months is None else months / 12
+    canonical = json.dumps(data, sort_keys=True, ensure_ascii=False)
+    return hashlib.sha256(canonical.encode()).hexdigest()
+
+
+def experience_summary(profile: dict) -> dict:
+    """Experience of a stored or reviewed profile dict, old (years) or new (months) form."""
+    try:
+        return CandidateProfile.model_validate(profile).experience_summary()
+    except ValidationError:
+        return {
+            "months": None,
+            "display": None,
+            "source": None,
+            "exact": None,
+            "note": "profile experience could not be read",
+        }
 
 
 def extract_pdf(path: Path) -> CandidateProfile:

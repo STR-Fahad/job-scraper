@@ -7,7 +7,16 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
-EVIDENCE_VERSION = "evidence-v8"
+from .experience import (
+    compare,
+    minimum_months,
+    months_from_years,
+    parse_requirement,
+    requirement_in_context,
+    with_kind,
+)
+
+EVIDENCE_VERSION = "evidence-v9"
 MAX_SEGMENT_CHARS = 420
 KINDS = ("req", "pref", "exp", "duty", "match", "transfer", "missing", "eligibility", "unresolved")
 SCHEMA = {
@@ -472,7 +481,10 @@ def build_segments(job: dict, profile: dict) -> tuple[list[Segment], list[Segmen
     for group in ("skills", "technologies"):
         for index, value in enumerate(profile.get(group, [])):
             add(people, "P", f"{group}[{index}]", value)
-    add(people, "P", "experience_years", profile.get("experience_years"))
+    years = profile.get("experience_years")
+    if years is None and profile.get("experience_months") is not None:
+        years = profile["experience_months"] / 12  # same text, so the same id, as the legacy form
+    add(people, "P", "experience_years", years)
     if len({item.id for item in jobs}) != len(jobs) or len({item.id for item in people}) != len(
         people
     ):
@@ -541,11 +553,13 @@ def alternative_group(source: str, labels: list[str]) -> tuple[list[str], bool] 
 
 def experience_scope(text: str) -> str:
     """'technology' when the years qualify a named technology, else 'total'."""
-    match = YEAR_RANGE.search(text) or YEARS.search(text)
-    if match is None:
+    requirement = parse_requirement(text)
+    position = text.find(requirement.quote) if requirement else -1
+    if position < 0:
         return "total"
-    after = re.split(r"[.;(]|,\s|\n|\bor\b", text[match.end() : match.end() + 100], maxsplit=1)[0]
-    before = text[max(0, match.start() - 40) : match.start()]
+    start, end = position, position + len(requirement.quote)
+    after = re.split(r"[.;(]|,\s|\n|\bor\b", text[end : end + 100], maxsplit=1)[0]
+    before = text[max(0, start - 40) : start]
     if technology_mentions(after) or re.search(
         TECHNOLOGY_PATTERN.pattern + r"\s*[:(–-]\s*$", before, re.I
     ):
@@ -864,8 +878,18 @@ def resolve_job_requirements(
     profile: list[Segment],
     experience_years: float | None,
     catalog: list[CandidateSkill] | None = None,
+    *,
+    experience_months: int | None = None,
+    preferred_segments: frozenset[str] = frozenset(),
 ) -> list[dict]:
-    """Validate job claims, then select all candidate evidence locally."""
+    """Validate job claims, then select all candidate evidence locally.
+
+    Approved experience is compared in whole months. `experience_months` is canonical;
+    `experience_years` is the legacy form and is converted exactly, rounding down only if
+    it is not a whole number of months.
+    """
+    if experience_months is None and experience_years is not None:
+        experience_months = months_from_years(experience_years)[0]
     jobs = {item.id: item for item in job}
     people = {item.id: item for item in profile}
     skills = catalog if catalog is not None else build_skill_catalog(profile)
@@ -904,6 +928,7 @@ def resolve_job_requirements(
         person = None
         derived = []
         options = None
+        comparison = None
         group = groups.get((finding.kind, source.id))
         if group and finding.text in group[0]:
             key = (finding.kind, source.id)
@@ -945,19 +970,44 @@ def resolve_job_requirements(
             if support is None:
                 skill = None
         elif finding.kind == "exp":
-            minimum = minimum_years(finding.text)
-            if minimum is not None and experience_years is not None:
-                if experience_scope(source.text) == "technology":
-                    # Approved total years cannot establish years in one technology.
+            requirement = requirement_in_context(finding.text, source.text)
+            if (
+                requirement is not None
+                and source.id in preferred_segments
+                and requirement.kind in {"minimum", "range"}
+            ):
+                # A level stated under a "nice to have" heading is a preference, not a minimum.
+                requirement = with_kind(requirement, "preferred")
+            if requirement is not None:
+                scope = experience_scope(source.text)
+                comparison = {**compare(requirement, experience_months), "scope": scope}
+            if requirement is not None and experience_months is not None:
+                minimum = requirement.minimum_months
+                if requirement.kind == "maximum":
+                    # An upper bound ("up to 2 years") is not something to meet.
+                    derived.append("maximum_experience_not_a_minimum")
+                elif scope == "technology":
+                    # Approved total experience cannot establish months in one technology.
                     professional = PROFESSIONAL_QUALIFIER.search(source.text)
                     state = (
-                        "UNMATCHED" if professional and experience_years < minimum else "UNVERIFIED"
+                        "UNMATCHED"
+                        if professional and experience_months < minimum
+                        else "UNVERIFIED"
                     )
                     derived.append("technology_specific_years_not_established")
                     if state == "UNMATCHED":
                         derived.append("professional_years_below_technology_minimum")
+                elif requirement.kind == "preferred":
+                    # Compared for display only; the score does not treat it as a minimum.
+                    state = "MATCHED" if experience_months >= minimum else "UNMATCHED"
+                    derived.append("preferred_experience_not_a_minimum")
+                elif requirement.kind == "ambiguous":
+                    # "or equivalent" wording: meeting the number is enough, missing it is not
+                    # a confirmed gap because the alternative cannot be judged.
+                    state = "MATCHED" if experience_months >= minimum else "UNVERIFIED"
+                    derived.append("experience_wording_ambiguous")
                 else:
-                    state = "MATCHED" if experience_years >= minimum else "UNMATCHED"
+                    state = "MATCHED" if experience_months >= minimum else "UNMATCHED"
                     derived.append("experience_state_from_approved_years")
         elif finding.kind == "duty":
             # Shared words alone are insufficient: require a catalogued demonstrated skill.
@@ -1036,12 +1086,13 @@ def resolve_job_requirements(
                 "derived_fields": derived,
                 "interpretation_status": "evidence_checked",
                 **({"alternative_options": options} if options is not None else {}),
+                **({"experience_comparison": comparison} if comparison is not None else {}),
             }
         )
     required_year_segments = {
         item.id
         for item in job
-        if item.field.startswith("description") and minimum_years(item.text) is not None
+        if item.field.startswith("description") and minimum_months(item.text) is not None
     }
     covered = {item["job_evidence_id"] for item in output if item["kind"] == "exp"}
     if required_year_segments - covered:

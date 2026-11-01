@@ -26,7 +26,13 @@ from .matching import (
     results as match_results,
 )
 from .processing import CATEGORIES, inspect_results, process_jobs
+from .ranking import explain, render_explain, render_queue, render_rank, render_reviews
+from .ranking import queue as rank_queue
+from .ranking import rank as rank_jobs
 from .registry import approve_board, effective_sources, set_enabled
+from .reviews import STATUSES as REVIEW_STATUSES
+from .reviews import add_review
+from .reviews import history as review_history
 from .runner import collect
 from .storage import Store
 
@@ -35,6 +41,13 @@ def positive_int(value):
     parsed = int(value)
     if not 1 <= parsed <= 10000:
         raise argparse.ArgumentTypeError("must be between 1 and 10000")
+    return parsed
+
+
+def score_value(value):
+    parsed = int(value)
+    if not 0 <= parsed <= 100:
+        raise argparse.ArgumentTypeError("must be between 0 and 100")
     return parsed
 
 
@@ -87,7 +100,50 @@ def main(argv=None):
     matching.add_argument("--job-id", type=int)
     matching.add_argument("--include-history", action="store_true")
     matching.add_argument("--model", help="Override GEMINI_MODEL")
-    for item in (discovery, sources, jobs, migration, processing, results, profile, matching):
+    ranking = sub.add_parser("rank", help="Rank current AI assessments locally; no API requests")
+    ranking.add_argument("action", choices=["list", "explain", "queue"])
+    ranking.add_argument("--job-id", type=int)
+    ranking.add_argument("--eligibility", choices=["ELIGIBLE", "UNVERIFIED"])
+    ranking.add_argument("--confidence", choices=["high", "medium", "low"])
+    ranking.add_argument("--min-score", type=score_value)
+    ranking.add_argument("--source", choices=sorted(COLLECTORS))
+    ranking.add_argument("--assessment-status", choices=["stale", "missing"])
+    shown = ranking.add_mutually_exclusive_group()
+    shown.add_argument(
+        "--hide-restricted", action="store_true", help="Omit the manually restricted section"
+    )
+    shown.add_argument(
+        "--only-restricted", action="store_true", help="Show only manually restricted jobs"
+    )
+    ranking.add_argument("--include-history", action="store_true")
+    ranking.add_argument("--limit", type=positive_int)
+    ranking.add_argument("--model", help="Only count assessments made with this model")
+    ranking.add_argument("--json", action="store_true", help="Print machine-readable output")
+    review = sub.add_parser("review", help="View or record manual eligibility reviews")
+    review.add_argument("action", choices=["list", "show", "add"])
+    review.add_argument("--job-id", type=int)
+    review.add_argument("--status", choices=list(REVIEW_STATUSES))
+    review.add_argument("--explanation")
+    review.add_argument(
+        "--evidence",
+        help="Your evidence reference (URL or quotation; not fetched or verified)",
+    )
+    review.add_argument(
+        "--outdated", action="store_true", help="list: only reviews needing reverification"
+    )
+    review.add_argument("--json", action="store_true", help="Print machine-readable output")
+    for item in (
+        discovery,
+        sources,
+        jobs,
+        migration,
+        processing,
+        results,
+        profile,
+        matching,
+        ranking,
+        review,
+    ):
         item.add_argument("--config", type=Path, default=Path("config.toml"))
     args = parser.parse_args(argv)
     if args.command == "gemini-check":
@@ -169,6 +225,59 @@ def main(argv=None):
                             job_id=args.job_id,
                             model=args.model,
                         )
+                elif args.command == "rank":
+                    if args.action == "explain":
+                        if args.job_id is None:
+                            raise ValueError("rank explain requires --job-id")
+                        data = explain(store, settings.matching, args.job_id, model=args.model)
+                        output = data if args.json else render_explain(data)
+                    elif args.action == "queue":
+                        data = rank_queue(
+                            store,
+                            settings.matching,
+                            include_history=args.include_history,
+                            model=args.model,
+                            status=args.assessment_status,
+                            source=args.source,
+                            limit=args.limit,
+                        )
+                        output = data if args.json else render_queue(data)
+                    else:
+                        data = rank_jobs(
+                            store,
+                            settings.matching,
+                            include_history=args.include_history,
+                            model=args.model,
+                            eligibility=args.eligibility,
+                            confidence=args.confidence,
+                            min_score=args.min_score,
+                            source=args.source,
+                            restricted="hide"
+                            if args.hide_restricted
+                            else "only"
+                            if args.only_restricted
+                            else "show",
+                            limit=args.limit,
+                        )
+                        output = data if args.json else render_rank(data)
+                elif args.command == "review":
+                    if args.action == "add":
+                        if args.job_id is None or not args.status:
+                            raise ValueError("review add requires --job-id and --status")
+                        entry = add_review(
+                            store, args.job_id, args.status, args.explanation, args.evidence
+                        )
+                        output = entry if args.json else render_reviews([entry])
+                    else:
+                        if args.action == "show" and args.job_id is None:
+                            raise ValueError("review show requires --job-id")
+                        entries = review_history(store, args.job_id)
+                        if args.action == "list":
+                            newest = {e["job_id"]: e for e in entries}
+                            entries = sorted(newest.values(), key=lambda e: e["job_id"])
+                            if args.outdated:
+                                entries = [e for e in entries if e["currency"] != "current"]
+                        output = entries if args.json else render_reviews(entries)
                 elif args.command == "sources":
                     if args.action == "list":
                         output = {
@@ -215,7 +324,13 @@ def main(argv=None):
                             allow_careers_fetch=args.allow_careers_fetch,
                             approve_verified=args.approve_verified,
                         )
-                print(json.dumps(output, indent=2, default=str))
+                text = (
+                    output if isinstance(output, str) else json.dumps(output, indent=2, default=str)
+                )
+                try:
+                    print(text)
+                except UnicodeEncodeError:  # a console that cannot show every job-title character
+                    print(text.encode("ascii", "replace").decode("ascii"))
                 return 0
         stats = collect(settings, source=args.source, board=args.board, max_pages=args.max_pages)
     except (OSError, ValueError, ValidationError, sqlite3.Error, CollectionError) as exc:

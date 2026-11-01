@@ -112,8 +112,9 @@ def ensure_schema(store):
                 END""")
 
 
-def snapshots(store):
-    for row in store.db.execute("SELECT id FROM jobs ORDER BY id"):
+def snapshots(store, job_id=None):
+    query = "SELECT id FROM jobs" + (" WHERE id=?" if job_id is not None else "") + " ORDER BY id"
+    for row in store.db.execute(query, (job_id,) if job_id is not None else ()):
         records = [
             dict(r)
             for r in store.db.execute(

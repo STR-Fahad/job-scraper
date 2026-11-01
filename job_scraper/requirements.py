@@ -15,9 +15,9 @@ from .evidence import (
     JobResponse,
     Segment,
     canonical_skill,
-    minimum_years,
     resolve_job_requirements,
 )
+from .experience import minimum_months, parse_requirement
 
 VERSION = "requirements-v2"
 HEADINGS = {
@@ -228,6 +228,8 @@ def resolve_classifications(
     profile: list[Segment],
     experience_years: float | None,
     catalog=None,
+    *,
+    experience_months: int | None = None,
 ) -> list[dict]:
     by_id = {item.id: item for item in inventory}
     seen = set()
@@ -271,7 +273,7 @@ def resolve_classifications(
             raise fail(field, "mandatory_item_discarded")
         if item.section == "preferred" and "req" in kinds:
             raise fail(field, "preferred_marked_required")
-        if minimum_years(item.text) is not None and "exp" not in kinds:
+        if minimum_months(item.text) is not None and "exp" not in kinds:
             raise fail(field, "experience_minimum_misclassified")
         if RESTRICTION.search(item.text) and "nonreq" in kinds and not item.heading:
             raise fail(field, "restriction_discarded")
@@ -297,9 +299,9 @@ def resolve_classifications(
             elif part.kind in {"exp", "duty", "eligibility", "unresolved"}:
                 text = item.text[:200]
                 if part.kind == "exp":
-                    match = re.search(r"\d+(?:\.\d+)?\s*\+?\s*(?:years?|yrs?)", item.text, re.I)
-                    if match:
-                        text = match.group()
+                    requirement = parse_requirement(item.text)
+                    if requirement:
+                        text = requirement.quote
                 findings.append(JobFinding(kind=part.kind, text=text, job_evidence_id=item.id))
     if seen != set(by_id):
         missing = sorted(set(by_id) - seen)[0]
@@ -312,5 +314,11 @@ def resolve_classifications(
         )
     segments = [Segment(x.id, f"description[{x.start_line}]", x.text) for x in inventory]
     return resolve_job_requirements(
-        JobResponse(findings=findings), segments, profile, experience_years, catalog
+        JobResponse(findings=findings),
+        segments,
+        profile,
+        experience_years,
+        catalog,
+        experience_months=experience_months,
+        preferred_segments=frozenset(x.id for x in inventory if x.section == "preferred"),
     )

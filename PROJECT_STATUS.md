@@ -2,7 +2,57 @@
 
 **Observed 2026-11-01 (Asia/Karachi); scoring calibration added 2026-11-02.** Recheck before acting; this is a snapshot, not a permanent count. See `PROJECT_HANDBOOK.md` for the architecture and rules.
 
-## 2026-11-02 — Final 3B.1 audit and offline rescore (uncommitted)
+## 2026-11-02 — Experience final compatibility review (uncommitted)
+
+| Item | Observed value |
+|---|---|
+| Hashing | `profile_hash` is representation independent: 1.25 years = 15 months, 1.5 = 18, 2.0 = 24 hash identically; all 961 month counts 0-960 hash differently; the real v1 and v2 stored hashes recompute exactly. A changed approved amount makes assessments stale (tested at 16, 18 and 24 months) |
+| Versions | Experience resolution changed materially against evidence-v8, so **`EVIDENCE_VERSION` is now `evidence-v9` and `SCORING_VERSION` `score-v6`**. Assessments #1 (score-v4) and #2 (score-v5) are stale and preserved |
+| Fixes | Month-based minimums were being dropped from the score (a bare quote lost its context); preferred, maximum and "or equivalent" experience lines were scored as mandatory minimums (also under evidence-v8); both fixed |
+| Real database | Backup `data/backups/jobs-pre-experience-rescore-20261101T215642Z.sqlite3` (verified identical, integrity ok). New offline row **#3** for job 22 (`offline_rescore`, score-v6/evidence-v9, score 2, token usage `{}`, source #2); rows #1 and #2 byte-identical; every other table unchanged; integrity ok, 0 FK violations |
+| Job 22 | approved 15 months, required 24, gap 9 months, experience UNMATCHED, Module 2 UNVERIFIED, only credit still the Python project PARTIAL |
+| Tests | Full suite **548 passed**; Ruff, `pip check`, `git diff --check` clean |
+| Live calls | None |
+
+Report: ignored `work/EXPERIENCE_FINAL_COMPATIBILITY_REVIEW.md`. The "no version bump" decision recorded in the section below was reversed by this review.
+
+## 2026-11-02 — Experience in years and months (uncommitted)
+
+| Item | Observed value |
+|---|---|
+| Behavior | Candidate experience is held and compared as whole months and shown as years and months. Approved profile v2 (`experience_years: 1.25`, unchanged in the database) reads as **15 months = 1 year, 3 months**. Job 22's 2+ years is **24 months**; gap **9 months**; still UNMATCHED |
+| Compatibility | No migration. Legacy decimal years convert exactly (inexact values round down and are reported). `profile_hash` is representation-independent: v2's stored hash recomputes exactly, and re-approving in months keeps it. Score-v5 / evidence-v8 / rule hashes unchanged; replay of job 22's saved classifications is identical to assessment #2 |
+| Code | New `job_scraper/experience.py`; `candidate.py`, `evidence.py`, `requirements.py`, `matching.py`, `ranking.py` updated; Module 2 untouched |
+| Tests | New `tests/test_experience.py` (25 test functions, 71 cases); full suite **520 passed**; Ruff check/format and `pip check` clean |
+| Real database | Read-only plus scratch copies. All table hashes identical to the earlier baseline; integrity ok; no review table; assessments #1 (score-v4) and #2 (score-v5) unchanged |
+
+Report: ignored `work/EXPERIENCE_YEARS_MONTHS_REPORT.md`.
+
+## 2026-11-02 — Final 3B.2 eligibility-review safety refinements (uncommitted)
+
+| Item | Observed value |
+|---|---|
+| Behavior | A current evidence-backed `confirmed_restricted` review moves a job to a separate non-recommended section (no rank, not queued for assessment; scores/assessments/reviews kept). Reviews carry the job fingerprint; a changed job makes them `needs_reverification` (derived at read time, rows never rewritten); restored when content returns or a new review is added. Evidence is the user's claim: never fetched or verified |
+| Code | `reviews.py` (`fingerprints`, `annotate`, `label`, derived `currency`), `ranking.py` (restricted section, queue exclusion, flags, shared renderers), `cli.py` (`--only-restricted`, `review list --outdated`), `processing.snapshots(job_id)` optional filter |
+| Tests | `tests/test_ranking.py` now 40 tests (15 new safety tests); full suite **449 passed**; Ruff check/format (50 files), `pip check`, `git diff --check` clean |
+| Real database | Read-only commands only. 350 jobs, population 2, 1 current assessment (job 22, #2, score-v5, score 2, coverage 29%), job 22 Module 2 **UNVERIFIED**, score-v4 row #1 retained and stale. All tables identical before and after; integrity ok, 0 FK violations. No review table yet (created by the first `review add` after a backup) |
+| Live calls | None |
+
+Report: ignored `work/MODULE_3B2_FINAL_SAFETY_REVIEW.md`.
+
+## 2026-11-02 — Module 3B.2 local rankings and manual review (uncommitted)
+
+| Item | Observed value |
+|---|---|
+| Code | New `job_scraper/ranking.py` and `job_scraper/reviews.py`; CLI `rank list/explain/queue` and `review list/show/add` in `cli.py` |
+| Schema | New append-only `eligibility_reviews` table, created lazily by the first `review add` after a verified backup. **Not yet created in `data/jobs.sqlite3`** (no review was entered); verified on a scratch copy |
+| Tests | New `tests/test_ranking.py` (25 tests); full suite **434 passed**; Ruff check/format (50 files) clean |
+| Real database (read-only commands) | 350 jobs; ranking population **2** (jobs 21, 22); **1** current assessment (job 22: assessment #2, score 2, coverage 29%); **1** awaiting assessment (job 21, missing); 0 stale. All tables, hashes and the backup folder unchanged after running every `rank`/`review` command; integrity ok, 0 FK violations |
+| Live calls | None; no collection |
+
+Report: ignored `work/MODULE_3B2_RANKING_REVIEW.md`. Limits: one real scored job; rankings are structurally verified with synthetic fixtures only; duty credit is still conservative.
+
+## 2026-11-02 — Final 3B.1 audit and offline rescore (committed with `58c7524`)
 
 | Item | Observed value |
 |---|---|
@@ -51,7 +101,7 @@ The documentation task made **no application code or configuration changes**. Te
 | Module 2 screening | Implemented in `screening.py`/`processing.py`, with extensive regressions. Current rule version `pakistan-0-3-v3.4`. |
 | Module 3A Gemini | Official `google-genai` integration and synthetic connectivity probe implemented. No connectivity probe run in this documentation task. |
 | Module 3B.1 | CV review/profile versioning, numbered requirements, role-only Gemini classification, Python evidence and deterministic score, SQLite cache implemented. One real job-22 assessment succeeded on 2026-10-29 (report in ignored `work/MODULE_3B1_FINAL_LIVE_TEST.md`). |
-| Module 3B.2 | Planned; ranking and eligibility review not implemented. |
+| Module 3B.2 | Implemented offline and uncommitted (see the 2026-11-02 sections): local ranking, assessment queue, explanations, append-only manual eligibility review, restricted-job separation and outdated-review detection. |
 | Module 4 / Module 5 | Dashboard/tracking and scheduling/notifications not implemented. |
 
 ## Local SQLite snapshot
@@ -60,7 +110,7 @@ Read-only query on 2026-11-01: **350** logical jobs; **350** source observations
 
 ## Confirmed limitations and questions
 
-- **Confirmed:** the real job-22 assessment validated all 30 numbered items and saved score **0/100** (all four components zero), with 1 UNMATCHED 2+ year minimum versus approved 1.25 years and 33 UNVERIFIED findings. Cache lookup used zero further SDK calls. This confirms the pipeline, not calibration.
+- **Confirmed:** the real job-22 assessment validated all 30 numbered items and saved score **0/100** (all four components zero), with 1 UNMATCHED 2+ year minimum versus approved 1.25 years (now shown as 15 months, 1 year 3 months) and 33 UNVERIFIED findings. Cache lookup used zero further SDK calls. This confirms the pipeline, not calibration.
 - **Confirmed:** alternative language clauses remain unverified; listed-only Docker/Linux/Git do not prove proficiency. Current duty alignment found no supported credit in that one job. Scores are not hiring probabilities or eligibility decisions.
 - **Confirmed design bounds:** English rule parsing and finite technology aliases can miss unusual or multilingual terms; CV redaction is heuristic; descriptions over 12,000 characters fail before matching. Source-observation active status is not guaranteed employer availability.
 - **Unverified here:** current live state of all six external APIs, Gemini billing/model access today, ranking accuracy across a representative set, and whether other agents changed this tree after the snapshot.
@@ -69,7 +119,7 @@ Read-only query on 2026-11-01: **350** logical jobs; **350** source observations
 ## Next bounded tasks
 
 1. Scoring calibration and offline rescore are done (see the 2026-11-02 sections). Job 22 needs no new live call for the rule change. Next: Module 3B.2 ranking and manual eligibility review (scope in the handbook roadmap).
-2. After calibration, design Module 3B.2 ranking and manual eligibility review. Acceptance: show score components, unresolved conditions, lifecycle/staleness, no automatic ELIGIBLE promotion.
+2. Assess more relevant jobs so rankings become informative: `rank queue` lists them; `match analyze --live` is billable and needs your explicit authorization per batch. Then review real rankings by hand before Module 4.
 3. Later, consider a local dashboard/application tracker; then opt-in scheduling/notifications. Neither is currently implemented or authorized by this document.
 
 Historical notes under ignored `work/` and `HARDENING_REPORT.md` provide evidence for earlier iterations. Current source and tests are authoritative when they differ. Before new work, run `git status --short`, inspect recent commits and the relevant code, and update this dated snapshot only with executed evidence.
