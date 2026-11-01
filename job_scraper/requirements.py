@@ -8,6 +8,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from .candidate import sanitize_text
 from .evidence import (
+    EXTRA_TECHNOLOGIES,
     SKILL_ALIASES,
     EvidenceError,
     JobFinding,
@@ -35,21 +36,7 @@ HEADINGS = {
 BULLET = re.compile(r"^\s*(?:[-*•]|\d+[.)])\s+")
 TECH_ALIASES = {
     *[alias for aliases in SKILL_ALIASES.values() for alias in aliases],
-    "C++",
-    "C#",
-    "Java",
-    "Go",
-    "Rust",
-    "Linux",
-    "PyTorch",
-    "TensorFlow",
-    "React",
-    "Kubernetes",
-    "AWS",
-    "automated testing",
-    "GraphQL",
-    "Redis",
-    "Node.js",
+    *EXTRA_TECHNOLOGIES,
 }
 TECH = re.compile(
     r"(?<!\w)(?:"

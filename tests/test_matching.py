@@ -300,7 +300,9 @@ def test_offline_default_and_live_cache_staleness(monkeypatch, tmp_path):
         )
         assert call_config.response_json_schema == GEMINI_RESPONSE_SCHEMA
         assert call_config.response_schema is None
-        assert results(store, cfg)[0]["score"] == 85
+        # Every applicable requirement matched; the posting states no preferences.
+        assert results(store, cfg)[0]["score"] == 100
+        assert results(store, cfg)[0]["result"]["raw_score"] == 85
         assert results(store, cfg)[0]["eligibility_status"] == "UNVERIFIED"
         again = analyze(store, cfg, live=True, client_factory=factory)
         assert again["cached"] == 1 and again["requests"] == 0
@@ -451,7 +453,18 @@ def test_continued_experience_keeps_one_approved_duration(monkeypatch):
         assert list(sent) == ["requirements"]
         assert "profile_evidence" not in sent
         assert "Python performs those decisions locally" in request["config"].system_instruction
-        assert store.db.execute("SELECT score FROM ai_assessments").fetchone()[0] == 85
+        assert store.db.execute("SELECT score FROM ai_assessments").fetchone()[0] == 100
+        saved = json.loads(store.db.execute("SELECT result FROM ai_assessments").fetchone()[0])
+        assert saved["breakdown"]["experience"] == {
+            "status": "scored",
+            "matched": 1,
+            "partial": 0,
+            "unmatched": 0,
+            "unverified": 0,
+            "total": 1,
+            "weight": 25,
+            "points": 25.0,
+        }
 
 
 def test_job_only_pipeline_catalog_and_cache(monkeypatch):

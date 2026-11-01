@@ -1,0 +1,187 @@
+{
+  "note": "Synthetic calibration fixtures. The profile is invented and contains no real CV data. Each case lists the Gemini role classification for every non-heading source line; unlisted lines are nonreq.",
+  "profile": {
+    "experience": [
+      {"text": "Software Engineer at Example Co. Built Ruby on Rails REST APIs with PostgreSQL and Redis; developed React UI components.", "dates": ["2025", "Present"]},
+      {"text": "Software Engineer at Example Co. (continued responsibilities) Integrated LLM workflows into Rails services and maintained background jobs.", "dates": ["2025", "Present"]}
+    ],
+    "projects": [
+      {"text": "Image Classifier | Python, PyTorch. Built Python model training pipeline and trained CNN models.", "dates": []},
+      {"text": "Chat Assistant | LangChain. Built a retrieval assistant with LangChain.", "dates": []}
+    ],
+    "skills": ["Python", "Ruby on Rails", "PostgreSQL", "Redis", "React", "Docker", "Git", "Linux", "PyTorch", "LangChain", "SQL"],
+    "technologies": [],
+    "education": [],
+    "certifications": [],
+    "experience_years": 1.25
+  },
+  "cases": [
+    {
+      "name": "full_backend_match",
+      "description": "Requirements\nExperience with Ruby on Rails and PostgreSQL\nExperience with REST APIs\n1+ year of professional software engineering\nResponsibilities\nBuild Rails APIs with PostgreSQL\nNice to have\nRedis",
+      "kinds": {
+        "Experience with Ruby on Rails and PostgreSQL": ["req"],
+        "Experience with REST APIs": ["req"],
+        "1+ year of professional software engineering": ["exp"],
+        "Build Rails APIs with PostgreSQL": ["duty"],
+        "Redis": ["pref"]
+      }
+    },
+    {
+      "name": "partial_python_job",
+      "description": "Requirements\nPython\nDocker\nKubernetes\nResponsibilities\nBuild Python data pipelines",
+      "kinds": {
+        "Python": ["req"],
+        "Docker": ["req"],
+        "Kubernetes": ["req"],
+        "Build Python data pipelines": ["duty"]
+      }
+    },
+    {
+      "name": "rails_strong_professional",
+      "description": "Requirements\nStrong Ruby on Rails experience\n2+ years of professional software engineering\nResponsibilities\nBuild and maintain Rails REST APIs\nNice to have\nReact",
+      "kinds": {
+        "Strong Ruby on Rails experience": ["req"],
+        "2+ years of professional software engineering": ["exp"],
+        "Build and maintain Rails REST APIs": ["duty"],
+        "React": ["pref"]
+      }
+    },
+    {
+      "name": "ai_ml_project_only",
+      "description": "Requirements\nProficiency in PyTorch\nPython\nResponsibilities\nTrain PyTorch models using Python\nNice to have\nLangChain",
+      "kinds": {
+        "Proficiency in PyTorch": ["req"],
+        "Python": ["req"],
+        "Train PyTorch models using Python": ["duty"],
+        "LangChain": ["pref"]
+      }
+    },
+    {
+      "name": "professional_python_required",
+      "description": "Requirements\nProfessional experience with Python\nResponsibilities\nTrain PyTorch models using Python",
+      "kinds": {
+        "Professional experience with Python": ["req"],
+        "Train PyTorch models using Python": ["duty"]
+      }
+    },
+    {
+      "name": "unmet_experience_minimum",
+      "description": "Requirements\nRuby on Rails\n3+ years of software engineering experience\nResponsibilities\nBuild Rails APIs",
+      "kinds": {
+        "Ruby on Rails": ["req"],
+        "3+ years of software engineering experience": ["exp"],
+        "Build Rails APIs": ["duty"]
+      }
+    },
+    {
+      "name": "unknown_pakistan_eligibility",
+      "description": "Requirements\nRuby on Rails\nResponsibilities\nBuild Rails APIs\nTerms\nWork authorization requirements will be discussed",
+      "kinds": {
+        "Ruby on Rails": ["req"],
+        "Build Rails APIs": ["duty"],
+        "Work authorization requirements will be discussed": ["eligibility"]
+      }
+    },
+    {
+      "name": "alternative_or_group",
+      "description": "Requirements\nStrong in at least one of Python, TypeScript, Go or Java\nExperience with either Ruby on Rails or Java\nResponsibilities\nBuild Rails APIs",
+      "kinds": {
+        "Strong in at least one of Python, TypeScript, Go or Java": ["req"],
+        "Experience with either Ruby on Rails or Java": ["req"],
+        "Build Rails APIs": ["duty"]
+      }
+    },
+    {
+      "name": "alternative_and_plus_or",
+      "description": "Requirements\nPython and at least one of Go or Rust\nOne of Python or Go and Kubernetes\nAt least one of Python, Elixir or Go\nResponsibilities\nBuild Rails APIs",
+      "kinds": {
+        "Python and at least one of Go or Rust": ["req"],
+        "One of Python or Go and Kubernetes": ["req"],
+        "At least one of Python, Elixir or Go": ["req"],
+        "Build Rails APIs": ["duty"]
+      }
+    },
+    {
+      "name": "missing_optional_categories",
+      "description": "Requirements\nRuby on Rails\nResponsibilities\nBuild Rails APIs",
+      "kinds": {
+        "Ruby on Rails": ["req"],
+        "Build Rails APIs": ["duty"]
+      }
+    },
+    {
+      "name": "preferred_section_not_extracted",
+      "description": "Requirements\nRuby on Rails\nResponsibilities\nBuild Rails APIs\nNice to have\nExperience building agent tasks",
+      "kinds": {
+        "Ruby on Rails": ["req"],
+        "Build Rails APIs": ["duty"],
+        "Experience building agent tasks": ["nonreq"]
+      }
+    },
+    {
+      "name": "many_unverified",
+      "description": "Requirements\nDocker\nGit\nLinux\nExcellent communication\nResponsibilities\nCollaborate with stakeholders",
+      "kinds": {
+        "Docker": ["req"],
+        "Git": ["req"],
+        "Linux": ["req"],
+        "Excellent communication": ["req"],
+        "Collaborate with stakeholders": ["duty"]
+      }
+    },
+    {
+      "name": "mostly_unmatched",
+      "description": "Requirements\nKubernetes\nJava\nRust\nGo\n5+ years of professional software engineering\nResponsibilities\nBuild Kubernetes operators in Go",
+      "kinds": {
+        "Kubernetes": ["req"],
+        "Java": ["req"],
+        "Rust": ["req"],
+        "Go": ["req"],
+        "5+ years of professional software engineering": ["exp"],
+        "Build Kubernetes operators in Go": ["duty"]
+      }
+    },
+    {
+      "name": "mixed_professional_and_project",
+      "description": "Requirements\nRuby on Rails\nPython\nPyTorch\nResponsibilities\nBuild Rails APIs\nTrain PyTorch models using Python",
+      "kinds": {
+        "Ruby on Rails": ["req"],
+        "Python": ["req"],
+        "PyTorch": ["req"],
+        "Build Rails APIs": ["duty"],
+        "Train PyTorch models using Python": ["duty"]
+      }
+    },
+    {
+      "name": "technology_specific_years",
+      "description": "Requirements\nPython\n1+ year of experience with Python\n2+ years of professional Python development\nResponsibilities\nTrain PyTorch models using Python",
+      "kinds": {
+        "Python": ["req"],
+        "1+ year of experience with Python": ["req", "exp"],
+        "2+ years of professional Python development": ["req", "exp"],
+        "Train PyTorch models using Python": ["duty"]
+      }
+    },
+    {
+      "name": "duplicate_and_subsumed",
+      "description": "We need experienced engineers\nRequirements\nPython\nStrong Python skills\n1+ year of software engineering experience\nResponsibilities\nTrain PyTorch models using Python",
+      "kinds": {
+        "We need experienced engineers": ["exp"],
+        "Python": ["req"],
+        "Strong Python skills": ["req"],
+        "1+ year of software engineering experience": ["exp"],
+        "Train PyTorch models using Python": ["duty"]
+      }
+    },
+    {
+      "name": "unresolved_mandatory_item",
+      "description": "Requirements\nRuby on Rails\nComfort with ambiguity, such as shifting priorities\nResponsibilities\nBuild Rails APIs",
+      "kinds": {
+        "Ruby on Rails": ["req"],
+        "Comfort with ambiguity, such as shifting priorities": ["unresolved"],
+        "Build Rails APIs": ["duty"]
+      }
+    }
+  ]
+}

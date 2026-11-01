@@ -61,9 +61,11 @@ def test_python_chooses_alias_project_listed_and_missing_support():
     result = resolve_job_requirements(
         JobResponse.model_validate({"findings": findings}), jobs, people, 1.25
     )
+    # "Required ... Python" names the skill without asking for professional use,
+    # so hands-on project evidence satisfies it (score-v5); it stays labeled project.
     assert [x["match_state"] for x in result] == [
         "MATCHED",
-        "PARTIAL",
+        "MATCHED",
         "UNVERIFIED",
         "UNMATCHED",
         "UNMATCHED",
@@ -71,9 +73,13 @@ def test_python_chooses_alias_project_listed_and_missing_support():
     ]
     assert result[0]["skill_support_level"] == "professional"
     assert result[1]["skill_support_level"] == "project"
+    assert "project_evidence_satisfies_unqualified_skill" in result[1]["derived_fields"]
     assert result[2]["skill_support_level"] == "listed"
     assert result[4]["profile_evidence_id"] is None
-    assert score_resolved(result, MatchingConfig())["score"] == 35
+    scored = score_resolved(result, MatchingConfig())
+    # 20 required + 0 experience + 20 duty points over 85 applicable weight points.
+    assert (scored["score"], scored["raw_score"], scored["applicable_weight"]) == (47, 40, 85)
+    assert scored["breakdown"]["preferred_projects"]["status"] == "not_stated"
 
 
 def test_complete_low_match_scores_zero_instead_of_failing():

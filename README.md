@@ -44,6 +44,7 @@ Set-Location 'C:\job scraper'
 .\.venv\Scripts\python.exe -m job_scraper match candidates --limit 20
 .\.venv\Scripts\python.exe -m job_scraper match analyze      # Offline preview: no API request
 .\.venv\Scripts\python.exe -m job_scraper match analyze --live --limit 3
+.\.venv\Scripts\python.exe -m job_scraper match rescore      # Offline: no API request
 .\.venv\Scripts\python.exe -m job_scraper match results
 ```
 
@@ -71,22 +72,52 @@ without generating skill names. Python rejects missing, invented, duplicate, and
 then retrieves source text locally and selects CV support from the approved skill catalog,
 derives MATCHED, PARTIAL, UNMATCHED or UNVERIFIED, and compares numeric experience
 minimums with the approved total. Professional evidence can establish a direct
-match. A required skill supported only by a project earns PARTIAL; a preferred
-project skill may earn MATCHED. Ambiguous or listed-only evidence earns no
-confirmed match. A duty with multiple shared technical terms and hands-on CV
-evidence can earn transferable PARTIAL credit. Technologies are equivalent only
-through explicit aliases. Alternative requirements such as "at least one of"
-remain UNVERIFIED until their group meaning can be established safely.
-The 40/25/20/15 component weights are configurable. PARTIAL earns half of its
-component share; UNMATCHED and UNVERIFIED earn zero and remain distinguishable
-in the breakdown. A complete extraction can therefore earn zero when the
-candidate lacks or cannot verify the required qualifications. Missing skill
+match. Hands-on project evidence matches a skill the posting simply names; when
+the clause asks for professional, production or commercial use, or for strong,
+proficient, solid or expert ability, project evidence earns PARTIAL. Ambiguous or
+listed-only evidence earns no confirmed match. A duty with multiple shared
+technical terms and hands-on CV evidence can earn transferable PARTIAL credit.
+Technologies are equivalent only through explicit aliases. An explicit OR list
+("at least one of", "one of", "either") is scored once, using the best supported
+option; mixed AND/OR wording or unrecognized options keep the group UNVERIFIED.
+Years attached to a named technology ("3+ years of Python") are not established by
+the approved total and stay UNVERIFIED (UNMATCHED only for an explicitly
+professional minimum above the approved total).
+
+Scoring (`score-v5`) keeps the 40/25/20/15 weights. Each component earns
+`weight × average(item value)` with MATCHED=1, PARTIAL=0.5, UNMATCHED=0 and
+UNVERIFIED=0. The headline `score` is earned points divided by the **applicable**
+weight, ×100, rounded half up. A component is applicable when it has scored
+findings, or when the posting has a preferred section that produced no preference
+findings (`stated_not_extracted`: weight kept, no credit). Components the posting
+never states are `not_stated` and excluded, so a posting with only required skills
+and duties can reach 100. `raw_score` keeps the former fixed-100 total. Duplicate
+mentions of the same skill count once (strictest state), and nonnumeric
+experience wording is not counted alongside a numeric total-years minimum.
+Unresolved lines under a Requirements or Preferred heading count as UNVERIFIED.
+
+`confidence` is reported separately: `evidence_coverage` is the weighted share of
+scored findings whose state is determined (MATCHED, PARTIAL or UNMATCHED);
+`score_ceiling` is the score if every UNVERIFIED finding were later confirmed;
+`confirmed_shortfall` is `100 - score_ceiling`. `interpretation` combines score
+(60 or more is high) and coverage (75% or more is strong evidence):
+`high_score_strong_evidence`, `high_score_limited_evidence`,
+`low_score_confirmed_gaps` or `low_score_unresolved_evidence`. None of these is a
+hiring probability or an employment-eligibility decision. Missing skill
 requirements, duties, explicit numeric experience requirements, or unclassified
-source items reject the response. Absence of optional or
-unspecified categories does not invalidate an extraction. Inspect cited source
-text for nuanced qualifications.
+source items still reject the response. Inspect cited source text for nuanced
+qualifications.
 The requirement, response, prompt, evidence and scoring versions are included in the cache
 key, so earlier assessments become stale when these rules change.
+
+`match rescore` re-applies the current evidence and scoring rules to Gemini
+classifications already saved in an assessment, without any API request. It runs only
+when that saved row has the same job content, approved profile and model, and its rule
+hash proves the same prompt, response schema, requirement extractor, screening version
+and weights; only the scoring and evidence versions may differ. It adds a new row with
+`assessment_mode: offline_rescore`, a `provenance` block naming the source row and zero
+token usage. The source row is never changed. `match results` shows each row's mode;
+older rows without a mode were live calls. Back up `data/jobs.sqlite3` before running it.
 
 Python 3.13, HTTPX, BeautifulSoup, Pydantic and SQLite. Six public-API collectors
 share an interface, validated records, host pacing, transactional persistence and

@@ -237,8 +237,16 @@ def test_job22_mocked_complete_assessment_saves_and_hits_cache(monkeypatch):
         first = analyze(store, config, live=True, job_id=1, client_factory=factory)
         assert first["requests"] == 1 and first["saved"] == 1
         record = results(store, config, job_id=1)[0]
-        assert record["score"] == 0
+        # The OR list in R015 is one requirement; this synthetic profile's Python
+        # entry is an experience line, so one option is professionally supported.
+        alternative = [
+            x for x in record["result"]["referenced_findings"] if "alternative_options" in x
+        ]
+        assert len(alternative) == 1 and alternative[0]["match_state"] == "MATCHED"
+        assert record["result"]["breakdown"]["required_skills"]["total"] == 11
+        assert record["score"] == 4
         assert record["result"]["breakdown"]["experience"]["unmatched"] == 1
+        assert record["result"]["confidence"]["level"] == "low"
         assert len(record["result"]["requirement_classifications"]) == 30
         again = analyze(store, config, live=True, job_id=1, client_factory=factory)
         assert again["cached"] == 1 and again["requests"] == 0

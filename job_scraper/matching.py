@@ -19,8 +19,11 @@ from .config import MatchingConfig
 from .evidence import (
     EVIDENCE_VERSION,
     EvidenceError,
+    atomic_skill,
     build_segments,
     build_skill_catalog,
+    canonical_skill,
+    minimum_years,
 )
 from .gemini import DEFAULT_MODEL, _safe_error
 from .processing import VERSION as SCREENING_VERSION
@@ -35,8 +38,29 @@ from .requirements import ClassifiedRequirements, extract_requirements, resolve_
 
 PROMPT_VERSION = "match-v9"
 ANALYSIS_SCHEMA_VERSION = "analysis-v7"
-SCORING_VERSION = "score-v4"
+SCORING_VERSION = "score-v5"
 MAX_JOB_CHARS = 12000
+COMPONENT_KINDS = {
+    "required_skills": "req",
+    "experience": "exp",
+    "role_alignment": "duty",
+    "preferred_projects": "pref",
+}
+CREDIT = {
+    "MATCHED": Decimal(1),
+    "PARTIAL": Decimal("0.5"),
+    "UNMATCHED": Decimal(0),
+    "UNVERIFIED": Decimal(0),
+}
+# Score at or above this value is reported as a high technical score. Uniform
+# PARTIAL support scores 50, so "high" requires more than half credit throughout.
+HIGH_SCORE = 60
+SCORE_SEMANTICS = (
+    "score: earned points / applicable category weight x 100 (technical evidence fit). "
+    "evidence_coverage: weighted share of scored findings with a determined state "
+    "(MATCHED, PARTIAL or UNMATCHED). score_ceiling: score if every UNVERIFIED finding "
+    "were later confirmed. Neither is a hiring probability or employment eligibility."
+)
 ENGINEERING_TITLE = re.compile(
     r"\b(?:engineer|developer|programmer|software|backend|back.end|full.stack|"
     r"frontend|front.end|data|machine learning|ml|ai|llm|devops|sre|platform|"
@@ -247,6 +271,7 @@ def validate_evidence(signals: AnalysisSignals, job_text: str, profile_text: str
 
 
 def score(signals: AnalysisSignals, config: MatchingConfig) -> dict:
+    """Legacy boolean scoring for old fixtures; analyze() uses score_resolved()."""
     groups = {
         "required_skills": signals.required_skills,
         "experience": signals.experience_requirements,
@@ -273,40 +298,114 @@ def score(signals: AnalysisSignals, config: MatchingConfig) -> dict:
     }
 
 
-def score_resolved(items: list[dict], config: MatchingConfig) -> dict:
-    """Score extracted requirements regardless of how well the candidate matches."""
-    groups = {
-        "required_skills": [x for x in items if x["kind"] == "req"],
-        "experience": [x for x in items if x["kind"] == "exp"],
-        "role_alignment": [x for x in items if x["kind"] == "duty"],
-        "preferred_projects": [x for x in items if x["kind"] == "pref"],
-    }
-    weights = config.weights.model_dump()
-    covered_weight = sum(weights[name] for name, group in groups.items() if group)
+def _percent(value: Decimal) -> int:
+    return int((value * 100).quantize(Decimal("1"), rounding=ROUND_HALF_UP))
+
+
+def _scored_items(items: list[dict], inventory) -> tuple[dict[str, list[dict]], list[dict]]:
+    """Select the findings that enter each component; report every exclusion."""
+    components = {name: [] for name in COMPONENT_KINDS}
+    excluded = []
+    sections = {item.id: item.section for item in inventory or []}
+    general_years = any(
+        x["kind"] == "exp" and "experience_state_from_approved_years" in x["derived_fields"]
+        for x in items
+    )
+    strictest = {}
+    for index, item in enumerate(items):
+        if item["kind"] in {"req", "pref"} and "alternative_options" not in item:
+            key = (item["kind"], canonical_skill(item["text"]))
+            if atomic_skill(item["text"]):
+                kept = strictest.get(key)
+                if kept is None or CREDIT[item["match_state"]] < CREDIT[items[kept]["match_state"]]:
+                    strictest[key] = index
+    for index, item in enumerate(items):
+        reason = None
+        component = next((n for n, k in COMPONENT_KINDS.items() if k == item["kind"]), None)
+        if item["kind"] in {"req", "pref"} and "alternative_options" not in item:
+            key = (item["kind"], canonical_skill(item["text"]))
+            if key in strictest and strictest[key] != index:
+                reason = "duplicate_skill_requirement"
+        elif item["kind"] == "exp" and general_years and minimum_years(item["text"]) is None:
+            reason = "subsumed_by_numeric_experience_minimum"
+        elif item["kind"] == "unresolved":
+            # An unresolved line under an explicit heading is still a qualification:
+            # it stays UNVERIFIED and counts against the score instead of vanishing.
+            section = sections.get(item["job_evidence_id"])
+            same_item = any(
+                x["job_evidence_id"] == item["job_evidence_id"] and x["kind"] in {"req", "pref"}
+                for x in items
+            )
+            if section in {"requirements", "preferred"} and not same_item:
+                component = "required_skills" if section == "requirements" else "preferred_projects"
+                item = {
+                    **item,
+                    "derived_fields": [*item["derived_fields"], "unresolved_item_scored"],
+                }
+        if component is None:
+            continue
+        if reason:
+            excluded.append(
+                {
+                    "index": index,
+                    "kind": item["kind"],
+                    "job_evidence_id": item["job_evidence_id"],
+                    "text": item["text"],
+                    "reason": reason,
+                }
+            )
+            continue
+        components[component].append(item)
+    return components, excluded
+
+
+def score_resolved(items: list[dict], config: MatchingConfig, inventory=None) -> dict:
+    """Deterministic technical-evidence fit, normalized over applicable categories.
+
+    `score` is earned points divided by the weight of applicable categories. A
+    category is applicable when it has scored findings, or when the posting has a
+    preferred section whose items were not extracted as preferences. Categories the
+    posting never states are excluded, neither rewarded nor penalized. `raw_score`
+    keeps the earlier fixed-100 formula for comparison. Confidence is reported
+    separately: UNVERIFIED and UNMATCHED both earn zero points, but only UNMATCHED
+    is determined evidence. Nothing here is a hiring probability or eligibility.
+    """
+    components, excluded = _scored_items(items, inventory)
     # The resolver checks direct job quotations, required skill and duty presence,
     # and every explicit numerical experience segment. Candidate gaps are scores,
     # not missing extraction. A posting need not specify years or preferences.
-    if not groups["required_skills"] or not groups["role_alignment"]:
+    if (
+        not any(x["kind"] == "req" for x in components["required_skills"])
+        or not components["role_alignment"]
+    ):
         raise EvidenceError("coverage_validation", "findings", "incomplete_job_requirements")
-    values = {
-        "MATCHED": Decimal(1),
-        "PARTIAL": Decimal("0.5"),
-        "UNMATCHED": Decimal(0),
-        "UNVERIFIED": Decimal(0),
-    }
+    preferred_stated = any(
+        item.section == "preferred" and not item.heading for item in inventory or []
+    )
+    weights = config.weights.model_dump()
     breakdown = {}
-    total = Decimal(0)
-    for name, group in groups.items():
-        counts = {state: sum(item["match_state"] == state for item in group) for state in values}
-        points = (
-            Decimal(weights[name])
-            * sum((values[item["match_state"]] for item in group), Decimal(0))
-            / Decimal(len(group))
-            if group
-            else Decimal(0)
-        )
-        total += points
+    raw = earned = applicable = determined = possible = Decimal(0)
+    for name, group in components.items():
+        weight = Decimal(weights[name])
+        counts = {state: sum(item["match_state"] == state for item in group) for state in CREDIT}
+        if group:
+            status = "scored"
+            points = weight * sum((CREDIT[x["match_state"]] for x in group), Decimal(0))
+            points /= Decimal(len(group))
+            known = weight * (len(group) - counts["UNVERIFIED"]) / Decimal(len(group))
+            open_points = weight * counts["UNVERIFIED"] / Decimal(len(group))
+        elif name == "preferred_projects" and preferred_stated:
+            status, points, known, open_points = "stated_not_extracted", Decimal(0), 0, weight
+        else:
+            status, points, known, open_points = "not_stated", Decimal(0), 0, 0
+        raw += points
+        if status != "not_stated":
+            applicable += weight
+            earned += points
+            determined += known
+            possible += points + open_points
         breakdown[name] = {
+            "status": status,
             "matched": counts["MATCHED"],
             "partial": counts["PARTIAL"],
             "unmatched": counts["UNMATCHED"],
@@ -315,10 +414,38 @@ def score_resolved(items: list[dict], config: MatchingConfig) -> dict:
             "weight": weights[name],
             "points": float(points),
         }
+    if applicable == 0:
+        raise EvidenceError("coverage_validation", "weights", "no_applicable_weight")
+    score = _percent(earned / applicable)
+    coverage = _percent(determined / applicable)
+    ceiling = _percent(possible / applicable)
+    level = "high" if coverage >= 75 else "medium" if coverage >= 50 else "low"
+    if score >= HIGH_SCORE:
+        interpretation = (
+            "high_score_strong_evidence" if coverage >= 75 else "high_score_limited_evidence"
+        )
+    else:
+        interpretation = (
+            "low_score_confirmed_gaps" if coverage >= 75 else "low_score_unresolved_evidence"
+        )
     return {
-        "score": int(total.quantize(Decimal("1"), rounding=ROUND_HALF_UP)),
+        "score": score,
+        "raw_score": int(raw.quantize(Decimal("1"), rounding=ROUND_HALF_UP)),
+        "applicable_weight": int(applicable),
         "breakdown": breakdown,
-        "scoring_coverage_weight": covered_weight,
+        "scoring_coverage_weight": sum(weights[n] for n, g in components.items() if g),
+        "confidence": {
+            "evidence_coverage": coverage,
+            "level": level,
+            "score_ceiling": ceiling,
+            "confirmed_shortfall": 100 - ceiling,
+            "interpretation": interpretation,
+            "counts": {
+                state: sum(b[state.lower()] for b in breakdown.values()) for state in CREDIT
+            },
+        },
+        "excluded_findings": excluded,
+        "semantics": SCORE_SEMANTICS,
     }
 
 
@@ -493,14 +620,15 @@ def _job_input(store, candidate: dict) -> tuple[str, str, dict]:
     return fingerprint, json.dumps(content, ensure_ascii=False), content
 
 
-def _rule_hash(config: MatchingConfig) -> str:
+def _rule_hash(config: MatchingConfig, *, scoring=None, evidence=None) -> str:
+    """Cache rule identity; scoring/evidence overrides reproduce an older row's hash."""
     return hashlib.sha256(
         json.dumps(
             {
                 "prompt": PROMPT_VERSION,
                 "schema": ANALYSIS_SCHEMA_VERSION,
-                "scoring": SCORING_VERSION,
-                "evidence": EVIDENCE_VERSION,
+                "scoring": scoring or SCORING_VERSION,
+                "evidence": evidence or EVIDENCE_VERSION,
                 "requirements": REQUIREMENT_VERSION,
                 "screening": SCREENING_VERSION,
                 "weights": config.weights.model_dump(),
@@ -508,6 +636,150 @@ def _rule_hash(config: MatchingConfig) -> str:
             sort_keys=True,
         ).encode()
     ).hexdigest()
+
+
+def _assessment(classifications, inventory, profile_segments, profile, catalog, config) -> dict:
+    """Production evidence resolution and scoring for validated item classifications."""
+    resolved = resolve_classifications(
+        classifications, inventory, profile_segments, profile.experience_years, catalog
+    )
+    return {
+        **score_resolved(resolved, config, inventory),
+        "signals": _signals_from_resolved(resolved).model_dump(),
+        "referenced_findings": resolved,
+        "requirement_classifications": [item.model_dump() for item in classifications.items],
+        "prompt_version": PROMPT_VERSION,
+        "schema_version": ANALYSIS_SCHEMA_VERSION,
+        "scoring_version": SCORING_VERSION,
+        "evidence_version": EVIDENCE_VERSION,
+    }
+
+
+def _save(store, candidate, approved, fingerprint, model, rules, result, usage) -> int:
+    with store.db:
+        return store.db.execute(
+            """INSERT INTO ai_assessments
+            (job_id,job_identity,profile_version,profile_hash,job_fingerprint,model,
+             rule_hash,created_at,eligibility_status,score,result,token_usage)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
+            (
+                candidate["job_id"],
+                json.dumps(candidate),
+                approved["version"],
+                approved["profile_hash"],
+                fingerprint,
+                model,
+                rules,
+                datetime.now(UTC).isoformat(),
+                candidate["eligibility_status"],
+                result["score"],
+                json.dumps(result),
+                json.dumps(usage),
+            ),
+        ).lastrowid
+
+
+def _approved_profile(store) -> dict:
+    approved = latest_profile(store, approved_only=True)
+    if not approved:
+        raise ValueError("Approve a reviewed sanitized profile before analysis")
+    newest = latest_profile(store)
+    if newest["version"] != approved["version"]:
+        raise ValueError("A newer draft profile needs review and approval before analysis")
+    return approved
+
+
+def rescore(store, config: MatchingConfig, *, model=None, include_history=False, job_id=None):
+    """Re-run current evidence and scoring rules on saved Gemini classifications, offline.
+
+    Allowed only when the saved row is for the same job content, approved profile and
+    model, and its rule hash proves the same prompt, response schema, requirement
+    extractor, screening version and weights; only scoring/evidence versions may
+    differ. The source row is never changed. The new row records its provenance and
+    zero token usage. No API client is created.
+    """
+    queue = candidates(store, include_history=include_history, job_id=job_id)
+    approved = _approved_profile(store)
+    profile = CandidateProfile.model_validate(approved["profile"])
+    chosen_model = model or os.environ.get("GEMINI_MODEL") or DEFAULT_MODEL
+    rules = _rule_hash(config)
+    stats = {
+        "mode": "offline_rescore",
+        "model": chosen_model,
+        "candidates": len(queue),
+        "requests": 0,
+        "cached": 0,
+        "saved": 0,
+        "assessment_ids": [],
+        "skipped": [],
+    }
+    for candidate in queue:
+        fingerprint, _, content = _job_input(store, candidate)
+        identity = (candidate["job_id"], approved["profile_hash"], fingerprint, chosen_model)
+        rows = store.db.execute(
+            """SELECT * FROM ai_assessments WHERE job_id=? AND profile_hash=?
+            AND job_fingerprint=? AND model=? ORDER BY id DESC""",
+            identity,
+        ).fetchall()
+        if any(row["rule_hash"] == rules for row in rows):
+            stats["cached"] += 1
+            continue
+        source = None
+        for row in rows:
+            saved = json.loads(row["result"])
+            compatible = _rule_hash(
+                config,
+                scoring=saved.get("scoring_version"),
+                evidence=saved.get("evidence_version"),
+            )
+            if (
+                saved.get("requirement_classifications")
+                and saved.get("prompt_version") == PROMPT_VERSION
+                and saved.get("schema_version") == ANALYSIS_SCHEMA_VERSION
+                and row["rule_hash"] == compatible
+            ):
+                source = (row, saved)
+                break
+        if source is None:
+            stats["skipped"].append(
+                {"job_id": candidate["job_id"], "reason": "no_compatible_saved_classifications"}
+            )
+            continue
+        row, saved = source
+        try:
+            _, profile_segments = build_segments(content, approved["profile"])
+            inventory = extract_requirements(content["description"])
+            classifications = ClassifiedRequirements.model_validate(
+                {"items": saved["requirement_classifications"]}
+            )
+            result = _assessment(
+                classifications,
+                inventory,
+                profile_segments,
+                profile,
+                build_skill_catalog(profile_segments),
+                config,
+            )
+        except EvidenceError as exc:
+            stats["skipped"].append(
+                {"job_id": candidate["job_id"], "reason": f"{exc.stage}:{exc.reason}"}
+            )
+            continue
+        result["assessment_mode"] = "offline_rescore"
+        result["provenance"] = {
+            "classification_source": "saved_validated_gemini_classifications",
+            "source_assessment_id": row["id"],
+            "source_rule_hash": row["rule_hash"],
+            "source_created_at": row["created_at"],
+            "source_scoring_version": saved.get("scoring_version"),
+            "source_evidence_version": saved.get("evidence_version"),
+            "source_model": row["model"],
+        }
+        stats["assessment_ids"].append(
+            _save(store, candidate, approved, fingerprint, chosen_model, rules, result, {})
+        )
+        stats["saved"] += 1
+    return stats
 
 
 def _usage(response) -> dict[str, int]:
@@ -544,12 +816,7 @@ def analyze(
         return {"mode": "offline", "candidates": len(queue), "preview": queue[:cap], "requests": 0}
     if not os.environ.get("GEMINI_API_KEY"):
         raise ValueError("GEMINI_API_KEY is absent from this process")
-    approved = latest_profile(store, approved_only=True)
-    if not approved:
-        raise ValueError("Approve a reviewed sanitized profile before live analysis")
-    newest = latest_profile(store)
-    if newest["version"] != approved["version"]:
-        raise ValueError("A newer draft profile needs review and approval before live analysis")
+    approved = _approved_profile(store)
     profile = CandidateProfile.model_validate(approved["profile"])
     chosen_model = model or os.environ.get("GEMINI_MODEL") or DEFAULT_MODEL
     rules = _rule_hash(config)
@@ -627,48 +894,20 @@ def analyze(
             if not response.text:
                 raise ValueError("empty_response")
             classifications = ClassifiedRequirements.model_validate_json(response.text)
-            resolved = resolve_classifications(
-                classifications,
-                inventory,
-                profile_segments,
-                profile.experience_years,
-                skill_catalog,
+            result = _assessment(
+                classifications, inventory, profile_segments, profile, skill_catalog, config
             )
-            signals = _signals_from_resolved(resolved)
-            scored = score_resolved(resolved, config)
-            result = {
-                **scored,
-                "signals": signals.model_dump(),
-                "referenced_findings": resolved,
-                "requirement_classifications": [
-                    item.model_dump() for item in classifications.items
-                ],
-                "prompt_version": PROMPT_VERSION,
-                "schema_version": ANALYSIS_SCHEMA_VERSION,
-                "scoring_version": SCORING_VERSION,
-                "evidence_version": EVIDENCE_VERSION,
-            }
-            with store.db:
-                store.db.execute(
-                    """INSERT INTO ai_assessments
-                    (job_id,job_identity,profile_version,profile_hash,job_fingerprint,model,
-                     rule_hash,created_at,eligibility_status,score,result,token_usage)
-                    VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
-                    (
-                        candidate["job_id"],
-                        json.dumps(candidate),
-                        approved["version"],
-                        approved["profile_hash"],
-                        fingerprint,
-                        chosen_model,
-                        rules,
-                        datetime.now(UTC).isoformat(),
-                        candidate["eligibility_status"],
-                        scored["score"],
-                        json.dumps(result),
-                        json.dumps(_usage(response)),
-                    ),
-                )
+            result["assessment_mode"] = "live"
+            _save(
+                store,
+                candidate,
+                approved,
+                fingerprint,
+                chosen_model,
+                rules,
+                result,
+                _usage(response),
+            )
             stats["saved"] += 1
         except errors.APIError as exc:
             stats["failures"].append({"job_id": candidate["job_id"], **_safe_error(exc)})
@@ -778,6 +1017,10 @@ def results(
                 "created_at": row["created_at"],
                 "eligibility_status": row["eligibility_status"],
                 "score": row["score"],
+                "confidence": json.loads(row["result"]).get("confidence"),
+                # Rows saved before score-v5 carry no mode; all of them were live calls.
+                "assessment_mode": json.loads(row["result"]).get("assessment_mode", "live"),
+                "provenance": json.loads(row["result"]).get("provenance"),
                 "stale": stale,
                 "result": json.loads(row["result"]),
                 "token_usage": json.loads(row["token_usage"]),

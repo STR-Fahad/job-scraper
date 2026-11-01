@@ -20,6 +20,7 @@ from .matching import (
     export_profile,
     import_profile,
     latest_profile,
+    rescore,
 )
 from .matching import (
     results as match_results,
@@ -80,7 +81,7 @@ def main(argv=None):
     profile.add_argument("--file", type=Path, help="PDF for import; reviewed JSON for approve")
     profile.add_argument("--output", type=Path, default=Path("data/candidate-profile-review.json"))
     matching = sub.add_parser("match", help="Preview or analyze technical matches")
-    matching.add_argument("action", choices=["candidates", "analyze", "results"])
+    matching.add_argument("action", choices=["candidates", "analyze", "rescore", "results"])
     matching.add_argument("--live", action="store_true", help="Authorize billable Gemini requests")
     matching.add_argument("--limit", type=positive_int)
     matching.add_argument("--job-id", type=int)
@@ -148,6 +149,14 @@ def main(argv=None):
                             settings.matching,
                             live=args.live,
                             limit=args.limit,
+                            model=args.model,
+                            include_history=args.include_history,
+                            job_id=args.job_id,
+                        )
+                    elif args.action == "rescore":
+                        output = rescore(
+                            store,
+                            settings.matching,
                             model=args.model,
                             include_history=args.include_history,
                             job_id=args.job_id,

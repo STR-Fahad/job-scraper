@@ -7,7 +7,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
-EVIDENCE_VERSION = "evidence-v7"
+EVIDENCE_VERSION = "evidence-v8"
 MAX_SEGMENT_CHARS = 420
 KINDS = ("req", "pref", "exp", "duty", "match", "transfer", "missing", "eligibility", "unresolved")
 SCHEMA = {
@@ -57,6 +57,58 @@ SKILL_ALIASES = {
 ALIAS_TO_SKILL = {
     normalize: canonical for canonical, aliases in SKILL_ALIASES.items() for normalize in aliases
 }
+# Explicit technology names recognized in job text, in addition to the aliases above.
+EXTRA_TECHNOLOGIES = (
+    "C++",
+    "C#",
+    "Java",
+    "Go",
+    "Rust",
+    "Linux",
+    "PyTorch",
+    "TensorFlow",
+    "React",
+    "Kubernetes",
+    "AWS",
+    "automated testing",
+    "GraphQL",
+    "Redis",
+    "Node.js",
+)
+TECHNOLOGY_PATTERN = re.compile(
+    r"(?<!\w)(?:"
+    + "|".join(
+        re.escape(x)
+        for x in sorted(
+            {
+                *[alias for aliases in SKILL_ALIASES.values() for alias in aliases],
+                *EXTRA_TECHNOLOGIES,
+            },
+            key=len,
+            reverse=True,
+        )
+    )
+    + r")(?!\w)",
+    re.I,
+)
+# Qualifiers that ask for more than hands-on project use of a skill. Project
+# evidence then earns PARTIAL; professional evidence is unaffected.
+PROFESSIONAL_QUALIFIER = re.compile(
+    r"\b(?:professional(?:ly)?|commercial(?:ly)?|production|industry|employment|"
+    r"work experience|on the job|in a work setting)\b",
+    re.I,
+)
+STRENGTH_QUALIFIER = re.compile(
+    r"\b(?:strong|expert|expertise|deep|advanced|extensive|proven|solid|proficien\w*|"
+    r"mastery|senior)\b",
+    re.I,
+)
+ALTERNATIVE_MARKER = re.compile(
+    r"\b(?:at least one of|any one of|one or more of|one of|either)\b", re.I
+)
+ALTERNATIVE_SEPARATOR = re.compile(r"\s*(?:,\s*(?:or\s+)?|/|\s+or\s+|\s*\|\s*)\s*", re.I)
+ALTERNATIVE_LEAD = re.compile(r"[\s:]*(?:the following(?:\s+\w+)?\s*:?\s*)?", re.I)
+STATE_VALUES = {"MATCHED": 2, "PARTIAL": 1, "UNVERIFIED": 0, "UNMATCHED": -1}
 DEMONSTRATION = re.compile(
     r"\b(?:built|build|developed|develop|implemented|implement|used|using|"
     r"worked with|integrated|integrate|maintained|maintain|designed|design|"
@@ -433,6 +485,106 @@ def minimum_years(value: str) -> float | None:
     return float(match.group(1)) if match else None
 
 
+def technology_mentions(text: str) -> list[re.Match]:
+    """Explicit technology words; a lowercase 'go' is an English verb, not Go."""
+    return [
+        hit
+        for hit in TECHNOLOGY_PATTERN.finditer(text)
+        if hit.group().casefold() != "go" or hit.group() == "Go"
+    ]
+
+
+def _clause(text: str, start: int, end: int) -> str:
+    """The sentence or semicolon clause containing a source span."""
+    left = max(text.rfind(". ", 0, start), text.rfind("; ", 0, start), text.rfind("\n", 0, start))
+    right = [
+        x for x in (text.find(". ", end), text.find("; ", end), text.find("\n", end)) if x >= 0
+    ]
+    return text[left + 1 : min(right) if right else len(text)]
+
+
+def _mention_span(text: str, label: str, start: int = 0) -> tuple[int, int] | None:
+    flags = 0 if label.casefold() == "go" else re.I
+    hit = re.compile(r"(?<!\w)" + re.escape(label) + r"(?!\w)", flags).search(text, start)
+    return hit.span() if hit else None
+
+
+def alternative_group(source: str, labels: list[str]) -> tuple[list[str], bool] | None:
+    """Return (options, structured) for an explicit OR list of technologies.
+
+    Labels before the marker stay independent (AND) requirements. Labels after it
+    must form one chain joined only by commas, slashes or 'or'. Anything else, such
+    as 'and', an unrecognized option or extra words, is not structured reliably.
+    """
+    marker = ALTERNATIVE_MARKER.search(source)
+    if marker is None:
+        return None
+    ends = [m.start() for m in re.finditer(r"[.;](?:\s|$)|\n", source) if m.start() >= marker.end()]
+    limit = ends[0] if ends else len(source)
+    spans = []
+    for label in dict.fromkeys(labels):
+        span = _mention_span(source, label, marker.end())
+        if span and span[1] <= limit:
+            spans.append((span, label))
+    if not spans:
+        return None
+    spans.sort()
+    options = [label for _, label in spans]
+    structured = len(options) >= 2 and bool(
+        ALTERNATIVE_LEAD.fullmatch(source[marker.end() : spans[0][0][0]])
+    )
+    for (left, _), (right, _) in zip(spans, spans[1:], strict=False):
+        if not ALTERNATIVE_SEPARATOR.fullmatch(source[left[1] : right[0]]):
+            structured = False
+    return options, structured
+
+
+def experience_scope(text: str) -> str:
+    """'technology' when the years qualify a named technology, else 'total'."""
+    match = YEAR_RANGE.search(text) or YEARS.search(text)
+    if match is None:
+        return "total"
+    after = re.split(r"[.;(]|,\s|\n|\bor\b", text[match.end() : match.end() + 100], maxsplit=1)[0]
+    before = text[max(0, match.start() - 40) : match.start()]
+    if technology_mentions(after) or re.search(
+        TECHNOLOGY_PATTERN.pattern + r"\s*[:(–-]\s*$", before, re.I
+    ):
+        return "technology"
+    return "total"
+
+
+def _skill_state(
+    kind: str, skill, source: str, label: str
+) -> tuple[str, SkillSupport | None, list]:
+    """Credit one named skill from the verified catalog, never from model output."""
+    derived = []
+    if skill is None:
+        if atomic_skill(label):
+            return "UNMATCHED", None, derived
+        return "UNVERIFIED", None, ["ambiguous_skill_requirement"]
+    # A demonstrated professional use outranks a project; a list never does.
+    support = next((x for x in skill.supports if x.level == "professional"), None)
+    if support is None:
+        support = next((x for x in skill.supports if x.level == "project"), None)
+    if support is None:
+        support = next((x for x in skill.supports if x.level == "listed"), None)
+    derived.append("candidate_skill_from_verified_catalog")
+    if support.level == "professional":
+        return "MATCHED", support, derived
+    if support.level == "project":
+        span = _mention_span(source, label) or (0, len(source))
+        clause = _clause(source, *span)
+        if PROFESSIONAL_QUALIFIER.search(clause):
+            derived.append("project_evidence_below_professional_qualifier")
+            return "PARTIAL", support, derived
+        if STRENGTH_QUALIFIER.search(clause):
+            derived.append("project_evidence_below_proficiency_qualifier")
+            return "PARTIAL", support, derived
+        derived.append("project_evidence_satisfies_unqualified_skill")
+        return "MATCHED", support, derived
+    return "UNVERIFIED", support, derived
+
+
 def _shared_technical_terms(job_text: str, profile_text: str) -> set[str]:
     left = {term.lower() for term in TECH_TERMS.findall(job_text)}
     right = {term.lower() for term in TECH_TERMS.findall(profile_text)}
@@ -447,6 +599,7 @@ def resolve(
     experience_years: float | None,
     catalog: list[CandidateSkill] | None = None,
 ) -> list[dict]:
+    """Legacy model-cited resolver kept for old fixtures; analyze() does not use it."""
     jobs = {item.id: item for item in job}
     people = {item.id: item for item in profile}
     projects = build_project_evidence(profile)
@@ -717,7 +870,6 @@ def resolve_job_requirements(
     people = {item.id: item for item in profile}
     skills = catalog if catalog is not None else build_skill_catalog(profile)
     by_name = {item.name: item for item in skills}
-    output = []
     for index, finding in enumerate(response.findings):
         field = f"findings[{index}]"
         source = jobs.get(finding.job_evidence_id)
@@ -729,38 +881,84 @@ def resolve_job_requirements(
             )
         if not phrase_in(source.text, finding.text):
             raise EvidenceError("claim_validation", field + ".text", "claim_not_in_job_source")
+    # An OR list such as "at least one of Python, Go or Rust" is one requirement,
+    # not one mandatory requirement per option.
+    groups = {}
+    for kind in ("req", "pref"):
+        for evidence_id in dict.fromkeys(f.job_evidence_id for f in response.findings):
+            labels = [
+                f.text
+                for f in response.findings
+                if f.kind == kind and f.job_evidence_id == evidence_id
+            ]
+            group = alternative_group(jobs[evidence_id].text, labels) if labels else None
+            if group:
+                groups[(kind, evidence_id)] = group
+    emitted = set()
+    output = []
+    for finding in response.findings:
+        source = jobs[finding.job_evidence_id]
         state = "UNVERIFIED"
         support = None
         skill = None
         person = None
         derived = []
-        if finding.kind in {"req", "pref"}:
-            label = canonical_skill(finding.text)
-            skill = by_name.get(label)
-            if re.search(r"\b(?:at least one of|one of|either)\b", source.text, re.I):
-                skill = None
-                derived.append("alternative_requirement_unresolved")
-            elif skill is not None:
-                # A demonstrated professional use outranks a project; a list never does.
-                support = next((x for x in skill.supports if x.level == "professional"), None)
-                if support is None:
-                    support = next((x for x in skill.supports if x.level == "project"), None)
-                if support is None:
-                    support = next((x for x in skill.supports if x.level == "listed"), None)
-                if support.level == "professional":
-                    state = "MATCHED"
-                elif support.level == "project":
-                    state = "PARTIAL" if finding.kind == "req" else "MATCHED"
-                derived.append("candidate_skill_from_verified_catalog")
-            elif atomic_skill(finding.text):
-                state = "UNMATCHED"
+        options = None
+        group = groups.get((finding.kind, source.id))
+        if group and finding.text in group[0]:
+            key = (finding.kind, source.id)
+            if key in emitted:
+                continue
+            emitted.add(key)
+            labels, structured = group
+            options = []
+            for label in labels:
+                option_state, option_support, _ = _skill_state(
+                    finding.kind, by_name.get(canonical_skill(label)), source.text, label
+                )
+                options.append(
+                    {
+                        "text": label,
+                        "match_state": option_state if structured else "UNVERIFIED",
+                        "skill_support_level": option_support.level if option_support else None,
+                    }
+                )
+            if structured:
+                best = max(
+                    range(len(labels)), key=lambda i: STATE_VALUES[options[i]["match_state"]]
+                )
+                state, support, derived = _skill_state(
+                    finding.kind,
+                    by_name.get(canonical_skill(labels[best])),
+                    source.text,
+                    labels[best],
+                )
+                if support is not None:
+                    skill = by_name.get(canonical_skill(labels[best]))
+                derived.append("alternative_group_one_option_required")
             else:
-                derived.append("ambiguous_skill_requirement")
+                derived.append("alternative_requirement_unresolved")
+            text = "one of: " + " | ".join(labels)
+        elif finding.kind in {"req", "pref"}:
+            skill = by_name.get(canonical_skill(finding.text))
+            state, support, derived = _skill_state(finding.kind, skill, source.text, finding.text)
+            if support is None:
+                skill = None
         elif finding.kind == "exp":
             minimum = minimum_years(finding.text)
             if minimum is not None and experience_years is not None:
-                state = "MATCHED" if experience_years >= minimum else "UNMATCHED"
-                derived.append("experience_state_from_approved_years")
+                if experience_scope(source.text) == "technology":
+                    # Approved total years cannot establish years in one technology.
+                    professional = PROFESSIONAL_QUALIFIER.search(source.text)
+                    state = (
+                        "UNMATCHED" if professional and experience_years < minimum else "UNVERIFIED"
+                    )
+                    derived.append("technology_specific_years_not_established")
+                    if state == "UNMATCHED":
+                        derived.append("professional_years_below_technology_minimum")
+                else:
+                    state = "MATCHED" if experience_years >= minimum else "UNMATCHED"
+                    derived.append("experience_state_from_approved_years")
         elif finding.kind == "duty":
             # Shared words alone are insufficient: require a catalogued demonstrated skill.
             for candidate in skills:
@@ -821,7 +1019,7 @@ def resolve_job_requirements(
         output.append(
             {
                 "kind": finding.kind,
-                "text": finding.text,
+                "text": text if options is not None else finding.text,
                 "matched": state in {"MATCHED", "PARTIAL"},
                 "match_state": state,
                 "job_evidence_id": source.id,
@@ -837,6 +1035,7 @@ def resolve_job_requirements(
                 "model_explanation": None,
                 "derived_fields": derived,
                 "interpretation_status": "evidence_checked",
+                **({"alternative_options": options} if options is not None else {}),
             }
         )
     required_year_segments = {
@@ -860,7 +1059,17 @@ def resolve_job_requirements(
         if heading in {"requirements", "required qualifications", "minimum qualifications"}:
             in_requirements = True
             continue
-        if heading in {"nice to have", "preferred qualifications", "benefits", "terms"}:
+        # A following section heading ends the explicit requirement list; the
+        # heading itself is never a requirement line.
+        if heading in {
+            "nice to have",
+            "preferred qualifications",
+            "benefits",
+            "terms",
+            "responsibilities",
+            "what you'll do",
+            "how it works",
+        }:
             in_requirements = False
         elif in_requirements:
             explicit_segments.add(segment.id)
