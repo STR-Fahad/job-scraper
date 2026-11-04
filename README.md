@@ -561,3 +561,21 @@ with their lifecycle state; eligibility never reactivates them. In particular,
 legacy jobs migrated with unknown lifecycle stay hidden until collection confirms
 them. Opening storage continues its existing expiry evaluation; processing does
 not rewrite collected job content or source metadata.
+
+## Local dashboard and application tracking (Module 4)
+
+Run the dashboard (Windows, from `C:\job scraper`; no extra install, it uses only the project's existing environment):
+
+```bash
+.venv\Scripts\python.exe -m job_scraper dashboard
+```
+
+Open <http://127.0.0.1:8765/>. Stop it with `Ctrl+C` in that terminal. The first start reads the database for about 10 seconds (it caches Module 2/3 results until stored data changes). `--port N` changes the port; only loopback addresses are accepted. The dashboard makes no network requests, never calls Gemini, never starts collectors, and sends nothing anywhere.
+
+Pages: **Overview** (live counts, with source state, Module 2 eligibility, technical match and your application status kept separate), **Job Explorer** (search, filters, sorting, 25 per page; default is engineering-relevant active jobs that are not INELIGIBLE, and UNVERIFIED jobs are always shown), **Job details** (screening evidence per dimension, assessment with confidence/coverage/ceiling, manual reviews, application panel, source observations, description), **CV Matches & Rankings** (existing Module 3B.2 ranking and queue; a ranking among assessed jobs only), **Eligibility Review Queue** (jobs with an unresolved Module 2 dimension, with source evidence and your append-only manual reviews) and **My Applications**.
+
+Application statuses (your own tracking, independent of the job's source state): `SAVED` bookmarked (not applied), `PLANNED` intend to apply, `APPLIED`, `SCREENING`, `INTERVIEW`, `OFFER`, `REJECTED`, `WITHDRAWN`. `APPLIED` and later need a date applied (today is used when you choose APPLIED). Any status may follow any other; every change is recorded in `job_application_history` (append-only). Notes stay in your local SQLite file and are never sent to Gemini. The dashboard never submits anything to an employer.
+
+A score is never shown without its confidence, coverage and ceiling. "Not assessed" is not a score of 0, a stale assessment is labelled stale, and a low-confidence result is evidence-limited, not a rejection and not an eligibility decision. The dashboard never triggers a paid assessment; it shows the CLI command (`match analyze --live --job-id ID --limit 1`) for you to run deliberately.
+
+Database: Module 4 adds `job_applications`, `job_application_history` and `app_tracking_meta` (additive; created on first start, after an automatic backup in `data/backups`). Code: `job_scraper/tracking.py` (tracking service), `job_scraper/dashboard/{data,render,app}.py` (read model, HTML, local WSGI server on `wsgiref`). Tests: `tests/test_tracking.py`, `tests/test_dashboard.py`.

@@ -1,6 +1,18 @@
 # Job Scraper — Current Status Snapshot
 
-**Observed 2026-11-01 (Asia/Karachi); scoring calibration added 2026-11-02.** Recheck before acting; this is a snapshot, not a permanent count. See `PROJECT_HANDBOOK.md` for the architecture and rules.
+**Observed 2026-11-01 (Asia/Karachi); updated through Module 4 on 2026-11-04.** Recheck before acting; this is a snapshot, not a permanent count. See `PROJECT_HANDBOOK.md` for the architecture and rules.
+
+## 2026-11-04 — Module 4 local dashboard and application tracking (committed with `92b1d2a`, tag `module-4-dashboard-application-tracking`)
+
+| Item | Result |
+|---|---|
+| Baseline | `main` at `f2cf099` (clean) before work; code committed as `92b1d2a`; documentation committed separately |
+| Added | `job_scraper/tracking.py`, `job_scraper/dashboard/` (`data.py`, `render.py`, `app.py`), CLI `dashboard`, `tests/test_tracking.py`, `tests/test_dashboard.py` |
+| Modified | `job_scraper/cli.py` (new command), `job_scraper/ranking.py` (optional `population=` argument only), `job_scraper/storage.py` (one call that re-points an application when `upsert` merges duplicate jobs) |
+| Database | additive tables `job_applications`, `job_application_history`, `app_tracking_meta`; verified backups `jobs-pre-module4-tracking-20261104T121408Z` and an automatic `jobs-pre-tracking-*`; migration tested on a copy first; `user_version` still 2; integrity ok, foreign keys 0 |
+| Tests | Full suite **695 passed** (658 + 37 new), re-run before the commit; Ruff check/format, `pip check`, `git diff --check` clean; real database integrity ok, foreign keys 0, 0 application records (none created by testing) |
+| Smoke | Browser pane: overview, explorer search/filters, rankings, job detail, save job and status change on a database copy; HTTP checks of all pages against the real database (read-only, 54–85 ms warm) |
+| Limits | No assessments are triggered from the UI (CLI only); first load builds the cache (~7 s); filtering runs in memory over lightweight rows (fine for tens of thousands of jobs); `signature()` change detection costs ~50 ms per request; Module 3 limitations unchanged |
 
 ## 2026-11-04 — Module 2/3 parsing and restriction validation (committed with `91ecfe3`, tag `module-2-3-parsing-restriction-validation`)
 
