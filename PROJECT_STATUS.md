@@ -2,6 +2,16 @@
 
 **Observed 2026-11-01 (Asia/Karachi); scoring calibration added 2026-11-02.** Recheck before acting; this is a snapshot, not a permanent count. See `PROJECT_HANDBOOK.md` for the architecture and rules.
 
+## 2026-11-04 — Module 2/3 parsing and restriction validation (committed with `91ecfe3`, tag `module-2-3-parsing-restriction-validation`)
+
+| Item | Result |
+|---|---|
+| Module 2 | `pakistan-0-3-v3.6`: number-word and bracketed experience minimums (`five years`, `[3+] years`) with contract, probation, recency, degree-alternative and approximate-wording guards; hyphenated `-based` compounds and `based on/upon` no longer create geography exceptions, while `UK-based`, `US-based`, `Berlin-based`, `non-US-based` and explicit country exclusions still do. Database reclassified offline (2,985 jobs; ELIGIBLE 0 / INELIGIBLE 806 / UNVERIFIED 2,179; matching population 781) from verified backups; history preserved |
+| Module 3 | `requirements-v3`: compensation-only geography, equal-opportunity text and bare labels may be `nonreq`; explicit hiring, residency, work-authorization and `only available/limited to` wording cannot be discarded, even mixed with salary text; claim quotes cut at word boundaries. Prompt `match-v9`, schema `analysis-v7`, `score-v6`, `evidence-v9` unchanged; rule hash `0dee3c1c25182af7` |
+| Live results | One request for #2932 failed validation (R034, then R051 `nonreq`; nothing saved). One request for #2919 succeeded: assessment #4, score 0/100, low confidence, coverage 15% (profile lists Git/CI/AI tools without narrative evidence; see `work/MODULE_3_EVIDENCE_QUALITY_AUDIT.md`) |
+| Tests | Full suite **658 passed**; Ruff, `pip check`, `git diff --check` clean; SQLite integrity ok, foreign keys 0 |
+| Known limits | Detector is phrase based; model may label location-policy text `nonreq` (GitLab R051); Module 3B experience parser does not read written number words; Pakistan eligibility remains UNVERIFIED for all jobs; approved profile unchanged at 15 months |
+
 ## 2026-11-02 — Experience final compatibility review (uncommitted)
 
 | Item | Observed value |
@@ -98,7 +108,7 @@ The documentation task made **no application code or configuration changes**. Te
 | Component | Status and execution evidence |
 |---|---|
 | Module 1 collection | Six collectors implemented. Earlier live feed checks are documented in `HARDENING_REPORT.md`; current live freshness was not reverified during this documentation task. Lifecycle, source registry/discovery and safe migrations exist. |
-| Module 2 screening | Implemented in `screening.py`/`processing.py`, with extensive regressions. Current rule version `pakistan-0-3-v3.4`. |
+| Module 2 screening | Implemented in `screening.py`/`processing.py`, with extensive regressions. Current rule version `pakistan-0-3-v3.6`. |
 | Module 3A Gemini | Official `google-genai` integration and synthetic connectivity probe implemented. No connectivity probe run in this documentation task. |
 | Module 3B.1 | CV review/profile versioning, numbered requirements, role-only Gemini classification, Python evidence and deterministic score, SQLite cache implemented. One real job-22 assessment succeeded on 2026-10-29 (report in ignored `work/MODULE_3B1_FINAL_LIVE_TEST.md`). |
 | Module 3B.2 | Implemented offline and uncommitted (see the 2026-11-02 sections): local ranking, assessment queue, explanations, append-only manual eligibility review, restricted-job separation and outdated-review detection. |

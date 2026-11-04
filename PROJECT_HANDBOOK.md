@@ -220,3 +220,5 @@ After **every project commit**, the next AI agent must inspect the committed dif
 ### New Chat Bootstrap Prompt
 
 > Inspect `C:\job scraper\PROJECT_HANDBOOK.md`, `PROJECT_STATUS.md`, and `AGENTS.md`, then check current Git status and relevant source/tests. Treat code and executed tests as authoritative. Work only on the next bounded task I give you. Preserve jobs, classifications, profile history and prior assessments; keep paid Gemini calls and commits/pushes behind my explicit authorization. Run checks and report observed results and limits.
+
+Module 2/3 update (2026-11-04, `91ecfe3`): screening is `pakistan-0-3-v3.6` and requirement validation is `requirements-v3`. `requirements.discardable_location_text` lets `nonreq` discard only pay-geography sentences, equal-opportunity wording and bare labels; `EXPLICIT_HIRING` (work authorization, residency, citizenship, `only available/limited to … located/residents`, `eligible to work`) makes an item non-discardable, including mixed salary-plus-hiring items. `claim_text` cuts quotes at word boundaries. Detection is phrase based and not exhaustive. Prompt, schema, scoring and evidence versions are unchanged.

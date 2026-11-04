@@ -535,7 +535,7 @@ Classifications live in the additive `job_classifications` table, separate from
 job/source payloads. Its creation first makes an integrity-checked SQLite backup
 in the database's `backups` folder. It leaves collection schema version 2 intact
 and reuses the existing database writer lock. Results include rules version
-`pakistan-0-3-v3.4`; changing rules requires bumping that version. Content or lifecycle
+`pakistan-0-3-v3.6`; changing rules requires bumping that version. Content or lifecycle
 changes invalidate saved results, which appear as UNVERIFIED until `process`
 runs again. Metadata-only refreshes do not force reprocessing. Source variants
 retain separate evidence; differing eligibility outcomes become UNVERIFIED.
