@@ -132,6 +132,23 @@ def candidate_territory(value):
     )
 
 
+# Hyphenated "-based" compounds that describe a method or product, not where a
+# person lives ("role-based access control"), and "based on/upon" reasons. Place
+# compounds such as "UK-based", "Berlin-based" or "non-US-based" are deliberately
+# absent so they still count. Only the exception keyword check uses this pattern.
+NON_LOCATION_BASED = re.compile(
+    r"\b(?:role|skill|skills|project|projects|cloud|web|team|merit|rule|rules|evidence|"
+    r"performance|usage|data|agent|model|text|browser|location|token|subscription|outcome|"
+    r"value|risk|policy|attribute|community|knowledge|content|api|app|mobile|task|goal|"
+    r"problem|competency|commission|cost|tag|graph|vector|query|event|node|tool|result|"
+    r"results|score|trust|open|consensus|time|hour|hourly|fee|incentive|equity|ai|llm|"
+    r"experience)-based\b"
+    # "discrimination based on race" gives a reason, not a place; "based on site" is a place.
+    r"|\bbased\s+(?:on|upon)\b(?![- ]?site\b)",
+    re.I,
+)
+
+
 def geography(job):
     territorial, schedules = [], []
     for key in ("locationRestrictions", "candidate_required_location"):
@@ -152,7 +169,11 @@ def geography(job):
         if PROHIBITED_PK.search(clause):
             state = "INELIGIBLE"
         elif re.search(r"\b(?:not|no|unless|except|excluding)\b", clause, re.I):
-            if re.search(r"\b(?:remote|work from|hire|based|located)\b", clause, re.I):
+            if re.search(
+                r"\b(?:remote|work from|hire|based|located)\b",
+                NON_LOCATION_BASED.sub("", clause),
+                re.I,
+            ):
                 state = "UNVERIFIED"
         else:
             patterns = [
@@ -213,11 +234,53 @@ def geography(job):
 OPTIONAL = re.compile(
     r"\b(?:preferred|nice[- ]to[- ]have|desirable|bonus|ideally|not required|optional)\b", re.I
 )
+NUMBER_WORDS = {
+    word: value
+    for value, word in enumerate(
+        "one two three four five six seven eight nine ten eleven twelve".split(), start=1
+    )
+}
+_NUMBER = r"(?:\d+(?:\.\d+)?|\b(?:" + "|".join(NUMBER_WORDS) + r")\b)"
+# Digits ("3+ years", "2-4 years"), clear English number words ("five years", "Four to
+# seven years") and bracketed numerals ("[3+] years", "(3+) years", "five (5) years").
 YEARS = re.compile(
-    r"(?P<low>\d+(?:\.\d+)?)\s*(?:(?:-|–|to)\s*(?P<high>\d+(?:\.\d+)?))?"
-    r"\s*\+?\s*(?P<unit>years?|months?)(?:['’])?\b",
+    r"(?:[\[(]\s*)?(?P<low>" + _NUMBER + r")(?:\s*\(\d+\))?"
+    r"\s*(?:(?:-|–|to)\s*(?P<high>" + _NUMBER + r"))?"
+    r"\s*\+?\s*[\])]?\s*(?:or more\s+)?(?P<unit>years?|months?)(?:['’])?\b",
     re.I,
 )
+# Durations that are not experience minimums; applied to the word and bracket forms.
+NOT_EXPERIENCE = re.compile(
+    r"\b(?:contract|probation(?:ary)?|trial|notice|fixed[- ]term|deadline|warranty|"
+    r"lock[- ]in|vesting|cliff|renewable|internship|apprenticeship|tenure|term|"
+    r"for (?:every|each))\b",
+    re.I,
+)
+
+
+# "within the last three years" is a recency window, not an experience minimum.
+# "After one year", "every six months" and "the next two years" describe time spans too.
+RECENCY_WINDOW = re.compile(
+    r"\b(?:within|after|every|each|per|during)\s+(?:the\s+)?(?:(?:last|past|next|previous|coming|first)\s+)?$"
+    r"|\b(?:last|past|next|previous|coming|first)\s+$|\bnot\s+$",
+    re.I,
+)
+# "Bachelor's degree or six years of experience" is an alternative, not a minimum.
+DEGREE_ALTERNATIVE = re.compile(
+    r"\b(?:degree|diploma|bachelor|master|certification|education)\b[^.;]{0,80}"
+    r"\bor\s+(?:(?:an? )?(?:additional |minimum of |at least )?)?$",
+    re.I,
+)
+APPROXIMATE = re.compile(r"\b(?:around|approximately|roughly|about|circa)\s+$", re.I)
+# "[3+] years as a Backend Engineer" names the role instead of the word "experience".
+ROLE_CONTEXT = re.compile(r"\bas an?\b[^.;]{0,40}\b(?:engineer|developer)\b", re.I)
+
+
+def number(value):
+    value = value.strip().casefold()
+    return NUMBER_WORDS[value] if value in NUMBER_WORDS else float(value)
+
+
 CONTEXT = re.compile(
     r"\b(?:experience|engineering|development|python|java|ruby|rails|react|software|programming|sales|recruiting|leadership|management)\b",
     re.I,
@@ -266,7 +329,7 @@ def experience(job):
         parts = re.split(r",\s*(?=(?:ideally|preferably|prefer(?:red|ably))\b)", clause, flags=re.I)
         for part in parts:
             matches = list(YEARS.finditer(part))
-            if not matches or not CONTEXT.search(part):
+            if not matches or not (CONTEXT.search(part) or ROLE_CONTEXT.search(part)):
                 continue
             alternatives = any(
                 re.search(
@@ -277,9 +340,19 @@ def experience(job):
                 for left, right in zip(matches, matches[1:], strict=False)
             )
             for match in matches:
+                extended = not match["low"][0].isdigit() or match[0][0] in "[("
+                if extended and (
+                    NOT_EXPERIENCE.search(part[max(0, match.start() - 30) : match.end() + 30])
+                    or RECENCY_WINDOW.search(part[: match.start()])
+                    or (
+                        match["unit"].lower().startswith("month")
+                        and not re.search(r"\bexperience\b", part, re.I)
+                    )
+                ):
+                    continue
                 scale = 12 if match["unit"].lower().startswith("month") else 1
-                low = float(match["low"]) / scale
-                high = float(match["high"]) / scale if match["high"] else None
+                low = number(match["low"]) / scale
+                high = number(match["high"]) / scale if match["high"] else None
                 maximum = bool(
                     re.search(
                         r"\b(?:at most|up to|maximum(?: of)?|no more than)\s*$",
@@ -294,6 +367,13 @@ def experience(job):
                     alternatives
                     or bool(re.search(r"\b(?:or equivalent|alternatively|unless)\b", part, re.I))
                     or (high is not None and high < low)
+                    or (
+                        extended
+                        and (
+                            DEGREE_ALTERNATIVE.search(part[: match.start()])
+                            or APPROXIMATE.search(part[: match.start()])
+                        )
+                    )
                 )
                 # A degree may satisfy some required years, but no candidate degree
                 # is known. Preserve its evidence, never subtract guessed credits.

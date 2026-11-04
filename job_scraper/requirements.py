@@ -19,7 +19,7 @@ from .evidence import (
 )
 from .experience import minimum_months, parse_requirement
 
-VERSION = "requirements-v2"
+VERSION = "requirements-v3"
 HEADINGS = {
     "requirements": "requirements",
     "required qualifications": "requirements",
@@ -49,6 +49,75 @@ RESTRICTION = re.compile(
     r"based in|work from|office|hybrid)\b",
     re.I,
 )
+# A restriction-flagged item may be discarded as nonreq only when every flagged sentence is
+# pay information, equal-opportunity boilerplate or a bare label. Anything else (including a
+# sentence that mixes pay with a hiring condition) keeps the strict restriction_discarded rule.
+PAY = re.compile(
+    r"\b(?:salary|salaries|pay|paid|compensation|remuneration|wages?|bonus(?:es)?|equity|ote)\b",
+    re.I,
+)
+EQUAL_OPPORTUNITY = re.compile(
+    r"\b(?:equal[- ]opportunity|affirmative action|eeo|discriminat\w*|harass\w*|"
+    r"protected (?:class|classes|characteristics?|status)|without regard to|regardless of)\b",
+    re.I,
+)
+HIRING_CONDITION = re.compile(
+    r"\b(?:must|required?|requires?|requirements?|need(?:s)? to|have to|eligib\w+|"
+    r"authori[sz]\w+|permits?|visas?|sponsor\w*|citizen\w*|right to work|hire[sd]?|hiring|"
+    r"relocat\w+|apply|applications?|only (?:candidates|applicants|those)|"
+    r"(?:candidates|applicants) (?:based|located|residing|living|who))\b",
+    re.I,
+)
+LABEL = re.compile(r"[A-Za-z][A-Za-z &/'\u2019-]{0,40}:")
+# Explicit hiring, residency or work-authorization wording that RESTRICTION does not list.
+EXPLICIT_HIRING = re.compile(
+    r"\b(?:authori[sz]ed to work|work(?:ing)? (?:permit|authori[sz]ation)|right to work|visas?|"
+    r"sponsorship|citizens?|citizenship|only hire|eligible to work|"
+    r"hire (?:candidates|applicants|people|anyone)|"
+    r"(?:(?:only|exclusively)\s+(?:available|open)|(?:available|open)\s+(?:only|exclusively)|"
+    r"limited|restricted)\s+(?:to|for)\s+(?:\w+\s+){0,4}?"
+    r"(?:located|based|residing|living|residents?|citizens?)|"
+    r"(?:available|open)\s+to\s+(?:\w+\s+){0,3}residents?\s+(?:of\s+[\w ]{1,30}\s+)?only|"
+    r"(?:must|need to|required to|have to)\s+(?:\w+\s+){0,3}(?:reside|live|located|based|resident)\w*)\b",
+    re.I,
+)
+# Equal-opportunity text lists citizenship and similar words; only these make it a condition.
+EQUAL_OPPORTUNITY_CONDITION = re.compile(
+    r"\b(?:must|authori[sz]ed to work|work (?:permit|authori[sz]ation)|right to work|visas?|"
+    r"sponsor\w*|only hire)\b",
+    re.I,
+)
+
+
+def restriction_like(text: str) -> bool:
+    return bool(RESTRICTION.search(text) or EXPLICIT_HIRING.search(text))
+
+
+def claim_text(text: str, limit: int = 200) -> str:
+    """First `limit` characters, cut at a word boundary so the quote stays a phrase of the item."""
+    if len(text) <= limit or text[limit].isspace():
+        return text[:limit]
+    cut = text[:limit].rsplit(None, 1)
+    return cut[0] if len(cut) == 2 else text[:limit]
+
+
+def _sentences(text: str) -> list[str]:
+    return [x.strip() for x in re.split(r"(?<=[.!?;])\s+|\n+", text) if x.strip()]
+
+
+def discardable_location_text(text: str) -> bool:
+    """True when nonreq cannot hide a hiring, residency or work-authorization condition."""
+    for sentence in _sentences(text):
+        if not restriction_like(sentence) or LABEL.fullmatch(sentence):
+            continue
+        if EQUAL_OPPORTUNITY.search(sentence) and not EQUAL_OPPORTUNITY_CONDITION.search(sentence):
+            continue
+        if PAY.search(sentence) and not HIRING_CONDITION.search(sentence):
+            continue
+        return False
+    return True
+
+
 AMBIGUOUS = re.compile(r"\b(?:at least one|either|ideally|such as|or equivalent)\b", re.I)
 SCHEMA = {
     "type": "object",
@@ -275,7 +344,12 @@ def resolve_classifications(
             raise fail(field, "preferred_marked_required")
         if minimum_months(item.text) is not None and "exp" not in kinds:
             raise fail(field, "experience_minimum_misclassified")
-        if RESTRICTION.search(item.text) and "nonreq" in kinds and not item.heading:
+        if (
+            restriction_like(item.text)
+            and "nonreq" in kinds
+            and not item.heading
+            and not discardable_location_text(item.text)
+        ):
             raise fail(field, "restriction_discarded")
         positive = [mention for mention in item.technologies if not mention.negated]
         if positive and "unresolved" in kinds and not AMBIGUOUS.search(item.text):
@@ -290,14 +364,14 @@ def resolve_classifications(
         for part in assignment.parts:
             if part.kind in {"req", "pref"}:
                 labels = list(dict.fromkeys(mention.text for mention in positive)) or [
-                    item.text[:200]
+                    claim_text(item.text)
                 ]
                 findings.extend(
                     JobFinding(kind=part.kind, text=label, job_evidence_id=item.id)
                     for label in labels
                 )
             elif part.kind in {"exp", "duty", "eligibility", "unresolved"}:
-                text = item.text[:200]
+                text = claim_text(item.text)
                 if part.kind == "exp":
                     requirement = parse_requirement(item.text)
                     if requirement:

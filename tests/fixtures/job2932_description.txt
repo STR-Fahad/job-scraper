@@ -1,0 +1,71 @@
+GitLab is the intelligent orchestration platform for DevSecOps. GitLab enables organizations to increase developer productivity, improve operational efficiency, reduce security and compliance risk, and accelerate digital transformation. More than 50 million registered users and more than 50% of the Fortune 100* trust GitLab to ship better, more secure software faster.
+The same principles built into our products are reflected in how our team works: we embrace AI as a core productivity multiplier, with all team members expected to incorporate AI into their daily workflows to drive efficiency, innovation, and impact. GitLab is where careers accelerate, innovation flourishes, and every voice is valued. Our high-performance culture is driven by our values and continuous knowledge exchange, enabling our team members to reach their full potential while collaborating with industry leaders to solve complex problems.
+Co-create the future with us
+as we build technology that transforms how the world develops software.
+*
+Fortune 500® is a registered trademark of Fortune Media IP Limited, used under license. Claim based on GitLab data. Fortune 100 refers to the top 20% ranked companies in the 2025 Fortune 500 list, published in June 2025. Fortune and Fortune Media IP Limited are not affiliated with, and do not endorse products or services of GitLab.
+About the role
+We're looking for a Backend Engineer to join our Repository Services team in GitLab's Create stage. The team owns the repository side of Source Code: how code gets into a repository, who may change it, and how those changes are verified. We build this as an access layer on the primitives the Gitaly team provides, for GitLab's own features and for the artificial intelligence agents now writing and pushing code alongside people.
+You'll work in one of GitLab's oldest and most complex product areas, using Ruby and GraphQL across
+GitLab.com
+, self-managed instances, and GitLab Dedicated. Repository Services is a new team, and its first months are about reliability and support, so you'll spend real time on performance and structured query language tuning, caching, rate limiting, testing, observability, and resiliency, with experienced team members to lean on. You'll collaborate with product management, product design, testing, security, user experience research, technical writing, Gitaly, Code Review, and the other Source Code teams.
+What you'll do
+Develop secure, well-tested, performant features and improvements using Ruby and GraphQL.
+Work through complex requirements and legacy constraints to deliver clear solutions while protecting the reliability of this critical system.
+Design and maintain backend services, application programming interfaces, data models, and business logic that control how code reaches a repository, who may change it, and how it is verified.
+Build on the primitives Gitaly provides and work closely with the Gitaly team.
+Triage and fix bugs and support requests for the features the team owns.
+Collaborate across functions and teams, both asynchronously and synchronously, and involve domain experts when their input will improve the outcome.
+Use artificial intelligence agents for well-scoped work when they can speed up delivery without sacrificing quality, and critically review their output.
+Write maintainable code that follows GitLab's standards and contribute to constructive code reviews.
+Help strengthen reliability by monitoring production health metrics, participating in Tier 2 on-call, troubleshooting incidents, contributing to root cause analysis, and improving observability and resiliency.
+Share knowledge through code review, technical documentation, and everyday collaboration while learning from others.
+What you'll bring
+Professional experience building backend web applications, services, or application programming interfaces, with experience using Ruby and GraphQL.
+An understanding of relational databases, structured query language, data modeling, caching, background processing, and backend performance practices.
+Experience contributing to user-facing workflows and maintaining their underlying systems.
+Experience writing backend unit and integration tests, with familiarity with the testing pyramid, Git, and collaborative code review processes.
+Experience using artificial intelligence coding agents and reviewing their output, or an interest in building these skills in a complex monorepo.
+Clear written and spoken English communication skills, including sharing useful status updates in a remote, asynchronous environment.
+The ability to manage assigned priorities, work through ambiguity, take ownership of your work, and seek guidance when needed.
+About the team
+Repository Services is a small backend team in the Create stage, formed in September 2026 when Source Code split into focused teams. As the split is finalized we expect to own repository mirroring, Git Large File Storage (LFS), protected branches and Branch Rules, push rules, Code Owners (shared with Code Review), and commit and tag signing. We build on Gitaly's primitives and meet regularly with the Gitaly team, and our work serves
+GitLab.com
+, self-managed instances, and GitLab Dedicated.
+The base salary range for this role’s listed level is currently for residents of the United States only. This range is intended to reflect the role's base salary rate in locations throughout the US. Grade level and salary ranges are determined through interviews and a review of education, experience, knowledge, skills, abilities of the applicant, equity with other team members, alignment with market data, and geographic location. The base salary range does not include any bonuses, equity, or benefits. See more information on our
+benefits
+and
+equity
+. Sales roles are also eligible for incentive pay targeted at up to 100% of the offered base salary.
+United States Salary Range
+$115,200
+—
+$194,400 USD
+How GitLab Supports Full-Time Employees
+Benefits to support your health, finances, and well-being
+Flexible Paid Time Off
+Team Member Resource Groups
+Equity Compensation & Employee Stock Purchase Plan
+Growth and Development Fund
+Parental Leave
+Please note that we welcome interest from candidates with varying levels of experience; many successful candidates do not meet every single requirement. Additionally, studies have shown that people from
+underrepresented groups
+are less likely to apply to a job unless they meet every single qualification. If you're excited about this role, please apply and allow our recruiters to assess your application.
+Country Hiring Guidelines:
+GitLab hires new team members in countries around the world. All of our roles are remote, however some roles may carry specific location-based eligibility requirements. Our Talent Acquisition team can help answer any questions about location after starting the recruiting process.
+Privacy Policy:
+Please review our
+Recruitment Privacy Policy.
+Your privacy is important to us.
+GitLab is proud to be an equal opportunity workplace and is an affirmative action employer. GitLab’s policies and practices relating to recruitment, employment, career development and advancement, promotion, and retirement are based solely on merit, regardless of race, color, religion, ancestry, sex (including pregnancy, lactation, sexual orientation, gender identity, or gender expression), national origin, age, citizenship, marital status, mental or physical disability, genetic information (including family medical history), discharge status from the military, protected veteran status (which includes disabled veterans, recently separated veterans, active duty wartime or campaign badge veterans, and Armed Forces service medal veterans), or any other basis protected by law. GitLab will not tolerate discrimination or harassment based on any of these characteristics. See also
+GitLab’s EEO Policy
+and
+EEO is the Law
+. If you have a disability or special need that requires
+accommodation
+, please let us know during the
+recruiting process
+.
+Find more
+English Speaking Jobs in United Kingdom
+on Arbeitnow
