@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 
+from . import tracking
 from .locking import WriterLock
 from .migrations import migrate_v2
 from .models import Job
@@ -167,6 +168,7 @@ class Store:
                         "UPDATE job_sources SET job_id=? WHERE job_id=?", (target, other)
                     )
                     self.db.execute("UPDATE job_urls SET job_id=? WHERE job_id=?", (target, other))
+                    tracking.repoint_after_merge(self.db, target, other)
                     self.db.execute("DELETE FROM jobs WHERE id=?", (other,))
             else:
                 target = self.db.execute(

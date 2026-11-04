@@ -325,6 +325,7 @@ def rank(
     source=None,
     restricted="show",
     limit=None,
+    population=None,
 ) -> dict:
     """Recommended ranking, plus a separate non-recommended section for current restrictions.
 
@@ -332,7 +333,12 @@ def rank(
     manual review is a current, evidence-backed confirmed_restricted is never ranked and
     receives no rank number; its score, assessments and reviews are kept and shown.
     """
-    population = build(store, config, include_history=include_history, model=model)
+    # `population` lets a read-only caller reuse one build() result (rows are copied, not changed).
+    population = (
+        [dict(r) for r in population]
+        if population is not None
+        else build(store, config, include_history=include_history, model=model)
+    )
     held = [r for r in population if r["restricted"]]
     open_rows = [r for r in population if not r["restricted"]]
     current = sorted((r for r in open_rows if r["assessment_status"] == "current"), key=_sort_key)
@@ -390,10 +396,19 @@ def rank(
 
 
 def queue(
-    store, config, *, include_history=False, model=None, status=None, source=None, limit=None
+    store,
+    config,
+    *,
+    include_history=False,
+    model=None,
+    status=None,
+    source=None,
+    limit=None,
+    population=None,
 ) -> dict:
     """Relevant jobs without a current assessment, in a separate queue: never scored as zero."""
-    population = build(store, config, include_history=include_history, model=model)
+    if population is None:
+        population = build(store, config, include_history=include_history, model=model)
     waiting = [
         r
         for r in population
@@ -447,9 +462,10 @@ def queue(
     }
 
 
-def explain(store, config, job_id, *, include_history=True, model=None) -> dict:
+def explain(store, config, job_id, *, include_history=True, model=None, population=None) -> dict:
     """Everything behind one job's position, or why it is outside the ranking population."""
-    population = build(store, config, include_history=include_history, model=model)
+    if population is None:
+        population = build(store, config, include_history=include_history, model=model)
     ranked = sorted(
         (r for r in population if r["assessment_status"] == "current" and not r["restricted"]),
         key=_sort_key,

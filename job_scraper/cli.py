@@ -119,6 +119,11 @@ def main(argv=None):
     ranking.add_argument("--limit", type=positive_int)
     ranking.add_argument("--model", help="Only count assessments made with this model")
     ranking.add_argument("--json", action="store_true", help="Print machine-readable output")
+    dash = sub.add_parser(
+        "dashboard", help="Run the local dashboard (127.0.0.1 only; makes no API requests)"
+    )
+    dash.add_argument("--host", default="127.0.0.1", help="loopback address only")
+    dash.add_argument("--port", type=int, default=8765)
     review = sub.add_parser("review", help="View or record manual eligibility reviews")
     review.add_argument("action", choices=["list", "show", "add"])
     review.add_argument("--job-id", type=int)
@@ -143,6 +148,7 @@ def main(argv=None):
         matching,
         ranking,
         review,
+        dash,
     ):
         item.add_argument("--config", type=Path, default=Path("config.toml"))
     args = parser.parse_args(argv)
@@ -156,6 +162,11 @@ def main(argv=None):
     logging.getLogger("httpx").setLevel(logging.WARNING)
     try:
         settings = load_settings(args.config)
+        if args.command == "dashboard":
+            from .dashboard.app import serve
+
+            serve(settings.database, settings.matching, args.host, args.port)
+            return 0
         if args.command != "collect":
             with Store(settings.database) as store:
                 if args.command == "jobs":
