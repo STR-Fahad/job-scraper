@@ -108,6 +108,12 @@ def _assessment_view(entry) -> dict:
         )
     manual = entry.get("manual_review")
     view["manual_review"] = manual["effective_status"] if manual else None
+    final = entry.get("final")
+    view["final_status"] = final["status"] if final else None
+    view["final_code"] = final["reason_code"] if final else None
+    view["final_detail"] = final["detail"] if final else None
+    view["final_source"] = final.get("source") if final else None
+    view["assessment_mode"] = entry.get("assessment_mode")
     return view
 
 
@@ -205,6 +211,13 @@ def _counts(rows, population) -> dict:
         "assessments_stale": statuses.count("stale"),
         "awaiting_assessment": statuses.count("missing"),
         "restricted_not_recommended": sum(r["restricted"] for r in population),
+        "final": {
+            **{
+                status: sum((r.get("final") or {}).get("status") == status for r in population)
+                for status in ("ELIGIBLE", "INELIGIBLE", "UNVERIFIED")
+            },
+            "not_judged": sum(not r.get("final") for r in population),
+        },
     }
 
 
@@ -269,6 +282,7 @@ EXPLORER_DEFAULTS = {
     "eligibility": "open",
     "workplace": "",
     "assessment": "",
+    "final": "",
     "tracked": "",
     "sort": "discovered",
     "page": "1",
@@ -326,6 +340,11 @@ def explore(snapshot: Snapshot, applications: dict[int, dict], raw: dict) -> dic
         if p["assessment"] == "stale" and kind != "stale":
             continue
         if p["assessment"] == "missing" and kind not in {"missing", "not_in_population"}:
+            continue
+        final = row.get("final_status")
+        if p["final"] == "none" and final is not None:
+            continue
+        if p["final"] in {"ELIGIBLE", "INELIGIBLE", "UNVERIFIED"} and final != p["final"]:
             continue
         tracked = applications.get(row["job_id"])
         if p["tracked"] == "any" and not tracked:

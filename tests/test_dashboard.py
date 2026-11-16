@@ -183,7 +183,7 @@ def no_network(monkeypatch):
 
 def test_overview_counts_come_from_the_database(env):
     app, path, assessed = env
-    status, _, body = call(app, "GET", "/")
+    status, _, body = call(app, "GET", "/overview")
     assert status == 200
     stats = dict(
         (label, int(value)) for value, label in re.findall(r"<b>(\d+)</b><span>(.*?)</span>", body)
@@ -457,6 +457,9 @@ def test_pages_never_call_gemini_collectors_or_the_network(env, monkeypatch):
     jid = ids(app, path)["plain"]
     for target in (
         "/",
+        "/?d=UNVERIFIED&q=x",
+        "/?d=APPLIED",
+        "/overview",
         "/jobs",
         "/jobs?q=x",
         "/jobs?sort=match",
@@ -507,3 +510,123 @@ def test_dashboard_refuses_non_loopback_binding(tmp_path):
 
     with pytest.raises(ValueError, match="loopback"):
         serve(tmp_path / "x.sqlite3", MatchingConfig(), host="0.0.0.0")
+
+
+def test_final_decision_is_shown_filtered_and_kept_apart_from_pakistan_hiring(env):
+    app, path, assessed = env
+    _, _, overview = call(app, "GET", "/overview")
+    assert "final suitability decision" in overview and "Not judged yet" in overview
+    assert "never confirmed by this decision" in overview
+    # The seeded low-confidence job has a current assessment and stays undecided, not rejected.
+    _, _, detail = call(app, "GET", f"/jobs/{assessed}")
+    assert "Pakistan hiring (Module 2)" in detail and "Suitability (Module 3)" in detail
+    status, _, decided = call(app, "GET", "/jobs?final=UNVERIFIED&relevance=&eligibility=")
+    assert status == 200 and "Software Engineer, AI Coding Tasks" in decided
+    assert "Plainco" not in decided
+    _, _, ineligible = call(app, "GET", "/jobs?final=INELIGIBLE&relevance=&eligibility=")
+    assert "Software Engineer, AI Coding Tasks" not in ineligible
+    _, _, waiting = call(app, "GET", "/jobs?final=none&q=plainco")
+    assert "Plainco" in waiting and "Not judged" in waiting
+    _, _, ranked = call(app, "GET", "/rankings?final=INELIGIBLE")
+    assert "Software Engineer, AI Coding Tasks" not in ranked
+    _, _, bad = call(app, "GET", "/rankings?final=bogus")
+    assert "Software Engineer, AI Coding Tasks" in bad  # an unknown value is ignored
+
+
+def test_applications_page_shows_the_final_decision_column(env):
+    app, path, assessed = env
+    post(app, f"/jobs/{assessed}/save", {"next": f"/jobs/{assessed}"})
+    _, _, body = call(app, "GET", "/applications")
+    assert "Final (M3)" in body and "UNVERIFIED" in body
+
+
+def test_session_judgment_is_shown_with_provenance_and_quotes(tmp_path, monkeypatch):
+    from test_judge import DESCRIPTION, _packet, _verdict, _world, _write
+
+    from job_scraper.judge import import_judgment
+
+    monkeypatch.setenv("GEMINI_API_KEY", "synthetic-only")
+    path = tmp_path / "jobs.sqlite3"
+    with Store(path) as store:
+        job_ids = _world(store, a=DESCRIPTION)
+        packet = _packet(store, job_ids["a"], tmp_path)
+        import_judgment(store, MatchingConfig(), _write(tmp_path, _verdict(packet)))
+    app = Dashboard(path, MatchingConfig(), PORT)
+    app.prepare()
+    _, _, body = call(app, "GET", f"/jobs/{job_ids['a']}")
+    assert "Claude&#x27;s CV comparison" in body or "Claude's CV comparison" in body
+    assert "Claude session judgment" in body
+    assert "met" in body and "Python REST APIs" in body  # a cited CV quote is shown
+    assert "not employer-confirmed hiring in Pakistan" in body
+    _, _, listing = call(app, "GET", "/jobs?final=ELIGIBLE&relevance=&eligibility=")
+    assert "Backend Python Engineer" in listing and "Claude session judgment" in listing
+
+
+def test_focus_page_lists_judged_jobs_by_filter_and_hides_applied_ones(env):
+    app, path, assessed = env
+    status, _, eligible = call(app, "GET", "/")
+    assert status == 200 and "Jobs for you" in eligible and 'class="tab on"' in eligible
+    assert "Software Engineer, AI Coding Tasks" not in eligible  # it is UNVERIFIED, not Eligible
+    _, _, unverified = call(app, "GET", "/?d=UNVERIFIED")
+    assert "Software Engineer, AI Coding Tasks" in unverified
+    assert "Plainco" not in unverified  # never judged: only reachable through Job Explorer
+    assert "have not been judged yet" in unverified and "/jobs?final=none" in unverified
+    assert "Pakistan hiring (Module 2)" in unverified and "never employer-confirmed" in unverified
+    # marking it applied removes it from the filter and lists it under Applied
+    status, headers, _ = post(
+        app,
+        f"/jobs/{assessed}/status",
+        {"status": "APPLIED", "next": "/?d=UNVERIFIED"},
+    )
+    assert status == 303 and headers["Location"].startswith("/?d=UNVERIFIED")
+    app.cache.wait()
+    _, _, after = call(app, "GET", "/?d=UNVERIFIED")
+    assert "Software Engineer, AI Coding Tasks" not in after
+    _, _, applied = call(app, "GET", "/?d=APPLIED")
+    assert "Software Engineer, AI Coding Tasks" in applied and "Undo" in applied
+    # undo moves it back to Saved, so the filter shows it again
+    post(app, f"/jobs/{assessed}/status", {"status": "SAVED", "next": "/?d=APPLIED"})
+    app.cache.wait()
+    _, _, back = call(app, "GET", "/?d=UNVERIFIED")
+    assert "Software Engineer, AI Coding Tasks" in back
+    with Store(path) as store:
+        events = [h["to_status"] for h in tracking.history(store.db, assessed)]
+    assert events == ["APPLIED", "SAVED"]
+
+
+def test_focus_page_search_source_and_bad_parameters(env):
+    app, path, assessed = env
+    _, _, hit = call(app, "GET", "/?d=UNVERIFIED&q=askable")
+    assert "Software Engineer, AI Coding Tasks" in hit
+    _, _, miss = call(app, "GET", "/?d=UNVERIFIED&q=nothing-matches")
+    assert "No jobs match this search." in miss
+    _, _, other = call(app, "GET", "/?d=UNVERIFIED&source=arbeitnow")
+    assert "Software Engineer, AI Coding Tasks" not in other
+    status, _, junk = call(app, "GET", "/?d=bogus&page=abc&source=<script>")
+    assert status == 200 and "<script>" not in junk and 'class="tab on"' in junk
+
+
+def test_focus_page_shows_session_judgment_evidence_and_escapes_text(tmp_path, monkeypatch):
+    from test_judge import DESCRIPTION, _packet, _verdict, _world, _write
+
+    from job_scraper.judge import import_judgment
+
+    monkeypatch.setenv("GEMINI_API_KEY", "synthetic-only")
+    path = tmp_path / "jobs.sqlite3"
+    with Store(path) as store:
+        job_ids = _world(store, a=DESCRIPTION)
+        packet = _packet(store, job_ids["a"], tmp_path)
+        import_judgment(store, MatchingConfig(), _write(tmp_path, _verdict(packet)))
+    app = Dashboard(path, MatchingConfig(), PORT)
+    app.prepare()
+    _, _, body = call(app, "GET", "/")
+    assert "Backend Python Engineer a" in body and "Evidence in your CV" in body
+    assert "Python REST APIs" in body and "claude-session" in body
+    assert "<details>" in body and "Mark applied" in body and 'name="csrf"' in body
+    assert "fit score" in body
+
+
+def test_navigation_keeps_other_pages_under_more(env):
+    app, path, assessed = env
+    _, _, body = call(app, "GET", "/applications")
+    assert "More ▾" in body and 'href="/overview"' in body and 'href="/jobs"' in body

@@ -16,7 +16,7 @@ from wsgiref.simple_server import WSGIRequestHandler, WSGIServer, make_server
 from .. import ranking, reviews, tracking
 from ..config import MatchingConfig
 from ..storage import Store
-from . import data, render
+from . import data, focus, render
 
 LOOPBACK = {"127.0.0.1", "localhost", "::1"}
 MAX_BODY = 64 * 1024
@@ -93,7 +93,7 @@ class Dashboard:
 
     # --- GET ------------------------------------------------------------------------------
 
-    def page(self, title, active, body, query, banner=None):
+    def page(self, title, active, body, query, banner=None, narrow=False):
         return self.respond(
             render.layout(
                 title,
@@ -102,6 +102,7 @@ class Dashboard:
                 notice=query.get("notice"),
                 error=query.get("error"),
                 banner=banner,
+                narrow=narrow,
             )
         )
 
@@ -121,6 +122,16 @@ class Dashboard:
         db = self.ro()
         try:
             if path == "/":
+                result = focus.build(snapshot, tracking.statuses_by_job(db), query)
+                return self.page(
+                    "Jobs for you",
+                    "focus",
+                    focus.focus_page(result, self.csrf),
+                    query,
+                    banner,
+                    narrow=True,
+                )
+            if path == "/overview":
                 body = render.overview(
                     snapshot,
                     tracking.counts(db),
@@ -172,9 +183,12 @@ class Dashboard:
             kwargs = {
                 "eligibility": query.get("eligibility") or None,
                 "confidence": query.get("confidence") or None,
+                "final": query.get("final") or None,
             }
             if kwargs["eligibility"] not in {None, "ELIGIBLE", "UNVERIFIED"}:
                 kwargs["eligibility"] = None
+            if kwargs["final"] not in {None, "ELIGIBLE", "INELIGIBLE", "UNVERIFIED"}:
+                kwargs["final"] = None
             if kwargs["confidence"] not in {None, "high", "medium", "low"}:
                 kwargs["confidence"] = None
             ranked = ranking.rank(store, self.matching, population=snapshot.population, **kwargs)
@@ -206,7 +220,15 @@ class Dashboard:
                 "My Applications", "applications", "", {**query, "error": str(exc)}, banner
             )
         pages = max(1, -(-listing["total"] // data.PAGE_SIZE))
-        body = render.applications_page(listing, tracking.counts(db), params, page, pages)
+        snapshot, _ = self.cache.current()
+        finals = {
+            a["job_id"]: snapshot.by_id[a["job_id"]].get("final_status")
+            for a in listing["items"]
+            if snapshot and a["job_id"] in snapshot.by_id
+        }
+        body = render.applications_page(
+            listing, tracking.counts(db), params, page, pages, finals=finals
+        )
         return self.page("My Applications", "applications", body, query, banner)
 
     # --- POST -----------------------------------------------------------------------------

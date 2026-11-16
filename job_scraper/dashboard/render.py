@@ -7,27 +7,31 @@ from .. import reviews, tracking
 from .data import DIMENSIONS, PAGE_SIZE, SORTS
 
 NAV = (
-    ("overview", "/", "Overview"),
+    ("focus", "/", "Jobs"),
+    ("applications", "/applications", "Applications"),
+)
+NAV_MORE = (
+    ("overview", "/overview", "Overview"),
     ("jobs", "/jobs", "Job Explorer"),
     ("rankings", "/rankings", "CV Matches & Rankings"),
     ("reviews", "/reviews", "Eligibility Review Queue"),
-    ("applications", "/applications", "My Applications"),
 )
 
 CSS = """
-:root{--bg:#f6f7f9;--card:#fff;--ink:#1d2430;--mute:#5b6676;--line:#dfe3ea;--accent:#1f5fbf;
---ok:#1c7a46;--okbg:#e4f4ea;--warn:#8a5a00;--warnbg:#fff2d6;--bad:#a12727;--badbg:#fbe4e4;
---info:#2a5aa8;--infobg:#e6eefb;--neutral:#4a5360;--neutralbg:#eceff3}
-@media (prefers-color-scheme:dark){:root{--bg:#14181f;--card:#1c222c;--ink:#e6e9ee;--mute:#9aa5b5;
---line:#2d3644;--accent:#7eb0ff;--ok:#7fd69f;--okbg:#17352a;--warn:#f0c46a;--warnbg:#3a2f12;
---bad:#ff9d9d;--badbg:#3d1d1d;--info:#9fc2ff;--infobg:#1c2c47;--neutral:#c0c8d4;--neutralbg:#2a313c}}
+:root{--bg:#faf8f3;--card:#fff;--ink:#1f2a24;--mute:#6b7670;--line:#e7e3d8;--accent:#1f6f54;
+--btn:#fff;--ok:#1f6f54;--okbg:#e3f0ea;--warn:#a86a12;--warnbg:#f8ecd4;--bad:#b4443c;--badbg:#f7e0dd;
+--info:#2f6b7a;--infobg:#e2eef1;--neutral:#55605a;--neutralbg:#efede6}
+@media (prefers-color-scheme:dark){:root{--bg:#14191a;--card:#1b2224;--ink:#e8efe9;--mute:#93a39a;
+--line:#2a3335;--accent:#5cc2a0;--btn:#0f1f19;--ok:#5cc2a0;--okbg:#1e3a30;--warn:#e3a94f;--warnbg:#3a2f17;
+--bad:#ef8b82;--badbg:#3d2220;--info:#7fc1d1;--infobg:#1b3138;--neutral:#b4c0b8;--neutralbg:#262f30}}
 *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);
 font:15px/1.5 system-ui,Segoe UI,Roboto,sans-serif}
 header{background:var(--card);border-bottom:1px solid var(--line);padding:0 20px;display:flex;
 gap:4px;align-items:center;flex-wrap:wrap}header b{margin-right:16px}
 header a{color:var(--mute);text-decoration:none;padding:14px 10px;border-bottom:3px solid transparent}
 header a.on{color:var(--ink);border-color:var(--accent)}header a:hover{color:var(--ink)}
-main{max-width:1280px;margin:0 auto;padding:20px}h1{font-size:1.5rem;margin:.2rem 0 1rem}
+main{max-width:1280px;margin:0 auto;padding:20px}main.narrow{max-width:800px;padding-top:34px}
+h1{font:600 1.75rem/1.2 Georgia,'Times New Roman',serif;letter-spacing:-.01em;margin:.2rem 0 .5rem}
 h2{font-size:1.1rem;margin:1.6rem 0 .6rem}h3{font-size:1rem;margin:1rem 0 .4rem}
 .card{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:14px 16px;margin-bottom:14px}
 .grid{display:grid;gap:12px;grid-template-columns:repeat(auto-fill,minmax(190px,1fr))}
@@ -49,7 +53,7 @@ form.filters{display:flex;gap:10px;flex-wrap:wrap;align-items:end;margin-bottom:
 label{display:flex;flex-direction:column;font-size:.8rem;color:var(--mute);gap:2px}
 input,select,textarea,button{font:inherit;padding:6px 8px;border:1px solid var(--line);
 border-radius:6px;background:var(--card);color:var(--ink)}button{cursor:pointer;background:var(--accent);
-color:#fff;border-color:var(--accent)}button.secondary{background:var(--card);color:var(--ink);border-color:var(--line)}
+color:var(--btn);border-color:var(--accent)}button.secondary{background:var(--card);color:var(--ink);border-color:var(--line)}
 textarea{width:100%;min-height:80px}.pager{display:flex;gap:10px;align-items:center;margin:12px 0}
 pre.desc{white-space:pre-wrap;word-wrap:break-word;background:var(--card);border:1px solid var(--line);
 border-radius:8px;padding:12px;max-height:520px;overflow:auto;font:13px/1.5 ui-monospace,Consolas,monospace}
@@ -57,6 +61,41 @@ blockquote{margin:.3rem 0;padding:.3rem .8rem;border-left:3px solid var(--line);
 white-space:pre-wrap}.cols{display:grid;gap:14px;grid-template-columns:repeat(auto-fit,minmax(340px,1fr))}
 .kv{display:grid;grid-template-columns:160px 1fr;gap:4px 12px}.kv dt{color:var(--mute)}.kv dd{margin:0}
 details>summary{cursor:pointer;color:var(--accent)}code{background:var(--neutralbg);padding:1px 5px;border-radius:4px}
+header b{font-family:Georgia,'Times New Roman',serif;font-size:1.05rem}
+.more{position:relative;margin-left:auto}.more summary{color:var(--mute);padding:14px 10px;cursor:pointer;list-style:none}
+.more summary::-webkit-details-marker{display:none}.more[open] summary,.more.on summary{color:var(--ink)}
+.more nav{position:absolute;right:0;top:100%;z-index:5;background:var(--card);border:1px solid var(--line);
+border-radius:10px;padding:6px;min-width:230px;display:flex;flex-direction:column;box-shadow:0 8px 24px rgba(0,0,0,.12)}
+.more nav a{padding:8px 12px;border:0;border-radius:6px}.more nav a:hover,.more nav a.on{background:var(--neutralbg)}
+.sub{color:var(--mute);margin:0 0 1rem}.note{color:var(--mute);font-size:.85rem;margin-top:1.4rem}
+form.tools{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:0 0 14px}
+form.tools input[type=search]{flex:1;min-width:180px;padding:9px 12px;border-radius:10px}
+form.tools select{padding:9px 12px;border-radius:10px}form.tools button{padding:9px 16px;border-radius:10px}
+.tabs{display:flex;gap:6px;border-bottom:1px solid var(--line);margin:0 0 18px;flex-wrap:wrap}
+.tab{padding:10px 14px;font-weight:600;color:var(--mute);text-decoration:none;border-bottom:3px solid transparent}
+.tab:hover{color:var(--ink)}.tab.on{color:var(--ink);border-color:var(--accent)}.tab.right{margin-left:auto}
+.tab .n{margin-left:6px;padding:1px 8px;border-radius:99px;background:var(--line);font-size:.8rem;font-weight:500}
+.tab.on .n{background:var(--okbg);color:var(--accent)}
+.job{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:start;background:var(--card);
+border:1px solid var(--line);border-radius:14px;margin-bottom:10px}
+.job details{grid-column:1;grid-row:1;min-width:0}.job form.apply{grid-column:2;grid-row:1;margin:0;padding:14px 16px 0 0}
+.job summary{display:flex;gap:14px;align-items:center;padding:14px 16px;cursor:pointer;list-style:none;
+color:var(--ink);border-radius:14px}.job summary::-webkit-details-marker{display:none}
+.job summary:hover{background:var(--neutralbg)}.job .main{flex:1;min-width:0}
+.job .title{font-weight:600}.job .meta{color:var(--mute);font-size:.88rem}.job .why{font-size:.9rem;margin-top:2px}
+.job .score{text-align:right;color:var(--mute);font-size:.8rem;white-space:nowrap}
+.job .score b{display:block;font-size:1.3rem;color:var(--ink)}
+.dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:7px;background:var(--mute)}
+.ELIGIBLE .dot{background:var(--ok)}.UNVERIFIED .dot{background:var(--warn)}.INELIGIBLE .dot{background:var(--bad)}
+.job .detail{padding:2px 0 16px;border-top:1px dashed var(--line);margin:0 16px}.job .detail p{margin:12px 0}
+.job .two{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.job h4{margin:8px 0 4px;font-size:.72rem;text-transform:uppercase;letter-spacing:.06em;color:var(--mute)}
+.job ul{margin:0;padding-left:18px;font-size:.9rem}
+.chips{display:flex;gap:6px;flex-wrap:wrap;margin-top:10px}
+.chip{font-size:.8rem;padding:3px 10px;border-radius:99px;background:var(--neutralbg);color:var(--mute)}
+.empty{text-align:center;color:var(--mute);padding:48px 0}
+@media (max-width:560px){.job .two{grid-template-columns:1fr}.job{grid-template-columns:1fr}
+.job form.apply{grid-column:1;grid-row:2;padding:0 16px 14px}}
 @media (max-width:700px){main{padding:12px}.kv{grid-template-columns:1fr}table{display:block;overflow-x:auto}}
 """
 
@@ -71,7 +110,32 @@ REASONS = {
     "technology_specific_years_not_established": "Years with this specific technology cannot be established.",
     "alternative_requirement_unresolved": "Alternatives were offered; none could be confirmed.",
     "requirement_wording_unresolved": "The wording was ambiguous.",
+    "manual_restriction": "A current manual review confirms a restriction.",
+    "experience_gap": "The required experience is far above the approved experience.",
+    "cannot_reach_suitable_fit": "Even the best case stays below the suitable-fit score.",
+    "suitable_fit": "The evidence score reaches the suitable-fit level.",
+    "insufficient_evidence": "Not enough verified evidence to decide either way.",
+    "session_judgment_eligible": "Claude's CV comparison finds it suitable, with no hard blocker.",
+    "session_judgment_ineligible": "Claude's CV comparison found a Python-confirmed blocker.",
+    "session_judgment_unverified": "Claude's CV comparison could not settle it either way.",
+    "judgment_conflicts_with_score": "Claude's comparison and the evidence score disagree.",
+    "out_of_scope": "Not a software-engineering role (support, QA, developer relations, research or similar).",
+    "good_enough_fit": "Good enough to apply: most mandatory requirements are met or partly met and none is unmet.",
+    "poor_fit": "Poor fit: the approved profile supports only a small share of the mandatory requirements.",
 }
+MODE_LABELS = {
+    "live": "Gemini assessment",
+    "offline_rescore": "Offline rescore of a Gemini assessment",
+    "session_judgment": "Claude session judgment",
+}
+VERDICT_BADGES = {
+    "met": "ok",
+    "partial": "info",
+    "not_met": "bad",
+    "unclear": "warn",
+    "not_applicable": "neutral",
+}
+CLI_JUDGE = ".venv\\Scripts\\python.exe -m job_scraper match judge-export --job-id {id}"
 INTERPRETATIONS = {
     "high_score_strong_evidence": "High score with strong evidence.",
     "high_score_limited_evidence": "High score, but part of the evidence is unresolved.",
@@ -135,6 +199,17 @@ def eligibility_badge(status, stale=False) -> str:
     return badge(kind, text, tip)
 
 
+def final_badge(status, code=None, detail=None) -> str:
+    """Module 3 suitability for applying; never an employer hiring confirmation."""
+    if not status:
+        return badge(
+            "neutral", "Not judged", "No current Module 3 assessment, so no final decision yet"
+        )
+    kind = {"ELIGIBLE": "ok", "INELIGIBLE": "bad"}.get(status, "warn")
+    tip = " · ".join(x for x in (human(code) if code else "", detail or "") if x)
+    return badge(kind, status, f"Module 3 suitability for applying. {tip}".strip())
+
+
 def app_badge(application) -> str:
     if not application:
         return '<span class="mute">—</span>'
@@ -184,10 +259,16 @@ def query(params: dict, **changes) -> str:
     return urlencode({k: v for k, v in merged.items() if v not in (None, "")})
 
 
-def layout(title, active, body, *, notice=None, error=None, banner=None) -> str:
-    nav = "".join(
-        f'<a href="{href}"{" class=on" if key == active else ""}>{e(label)}</a>'
-        for key, href, label in NAV
+def layout(title, active, body, *, notice=None, error=None, banner=None, narrow=False) -> str:
+    def link(key, href, label):
+        return f'<a href="{href}"{" class=on" if key == active else ""}>{e(label)}</a>'
+
+    nav = "".join(link(*item) for item in NAV)
+    more_on = any(key == active for key, _, _ in NAV_MORE)
+    more = (
+        f'<details class="more{" on" if more_on else ""}"><summary>More ▾</summary><nav>'
+        + "".join(link(*item) for item in NAV_MORE)
+        + "</nav></details>"
     )
     notes = ""
     if banner:
@@ -201,7 +282,8 @@ def layout(title, active, body, *, notice=None, error=None, banner=None) -> str:
         '<meta name=viewport content="width=device-width,initial-scale=1">'
         "<meta name=referrer content=same-origin>"
         f"<title>{e(title)} · Job Scraper</title><style>{CSS}</style></head><body>"
-        f"<header><b>Job Scraper</b>{nav}</header><main>{notes}<h1>{e(title)}</h1>{body}</main>"
+        f"<header><b>Job Scraper</b>{nav}{more}</header>"
+        f"<main{' class=narrow' if narrow else ''}>{notes}<h1>{e(title)}</h1>{body}</main>"
         "</body></html>"
     )
 
@@ -257,6 +339,19 @@ def overview(snapshot, app_counts, profile, orphans) -> str:
         stat(c["assessments_current"], "Current CV assessments"),
         stat(c["assessments_stale"], "Stale CV assessments"),
         stat(c["awaiting_assessment"], "Awaiting assessment"),
+    ]
+    final = c["final"]
+    parts.append(
+        "</div><h2>Module 3 · final suitability decision</h2>"
+        '<p class="small mute">Suitability for applying, from current CV assessments. Pakistan '
+        "hiring is the separate Module 2 status above and is never confirmed by this decision.</p>"
+        "<div class=grid>"
+    )
+    parts += [
+        stat(final["ELIGIBLE"], "Final: eligible"),
+        stat(final["INELIGIBLE"], "Final: ineligible"),
+        stat(final["UNVERIFIED"], "Final: unverified"),
+        stat(final["not_judged"], "Not judged yet (no current assessment)"),
     ]
     parts.append("</div><h2>My applications · your status</h2><div class=grid>")
     parts += [
@@ -357,6 +452,18 @@ def explorer(result, sources) -> str:
             p["assessment"],
         )
         + _select(
+            "final",
+            "Final decision (M3)",
+            [
+                ("", "Any"),
+                ("ELIGIBLE", "Eligible"),
+                ("UNVERIFIED", "Unverified"),
+                ("INELIGIBLE", "Ineligible"),
+                ("none", "Not judged yet"),
+            ],
+            p["final"],
+        )
+        + _select(
             "tracked",
             "My tracking",
             [
@@ -382,14 +489,21 @@ def explorer(result, sources) -> str:
             f"<td>{eligibility_badge(r['eligibility'], r['classification_stale'])}<br>"
             f'<span class="small mute">experience: {e(r["experience"])}</span></td>'
             f"<td>{match_cell(r)}</td>"
+            f"<td>{final_badge(r.get('final_status'), r.get('final_code'), r.get('final_detail'))}"
+            + (
+                f"<br><span class='small mute'>{e(MODE_LABELS.get(r.get('assessment_mode'), ''))}"
+                "</span>"
+                if r.get("final_status")
+                else ""
+            )
+            + "</td>"
             f"<td>{app_badge(r['application'])}</td>"
             f"<td class=small>{tidy_date(r['first_seen'])}<br>{link_url(r['source_url'], 'posting')}</td></tr>"
         )
     table = (
         "<table><tr><th>Job</th><th>Source state · workplace</th><th>Module 2 · experience</th>"
-        "<th>Technical match</th><th>My application</th><th>Discovered · link</th></tr>"
-        + "".join(rows)
-        + "</table>"
+        "<th>Technical match</th><th>Final (M3)</th><th>My application</th>"
+        "<th>Discovered · link</th></tr>" + "".join(rows) + "</table>"
         if rows
         else '<div class="card mute">No jobs match these filters. Try “Show all jobs”.</div>'
     )
@@ -478,6 +592,58 @@ def _findings(title, items, kind) -> str:
     )
 
 
+def _created(explain) -> str:
+    """Creation time of the current assessment, from its stored-assessment summary."""
+    for item in explain.get("assessment_history", []):
+        if item["id"] == explain.get("assessment_id"):
+            return item["created_at"]
+    return ""
+
+
+def judgment_panel(explain) -> str:
+    """Claude's per-requirement comparison of the job with the approved CV (read-only)."""
+    judgment = (explain or {}).get("judgment")
+    if not judgment:
+        return ""
+    rows = []
+    for v in explain.get("judgment_requirements", []):
+        cv = "<br>".join(
+            f"<span class='small'><code>{e(x['evidence_id'])}</code> {e(_quote(x['quote'], 220))}"
+            "</span>"
+            for x in v.get("cv_evidence", [])
+        )
+        rows.append(
+            f"<tr><td><code>{e(v['requirement_id'])}</code><br>"
+            f"<span class='small mute'>{e(', '.join(v['kinds']))}</span></td>"
+            f"<td>{badge(VERDICT_BADGES.get(v['verdict'], 'neutral'), v['verdict'].replace('_', ' '))}"
+            f"</td><td class=small>{e(_quote(v.get('job_quote'), 220))}</td>"
+            f"<td>{cv or '<span class=mute>none cited</span>'}</td>"
+            f"<td class=small>{e(v.get('note', ''))}</td></tr>"
+        )
+    suggested = judgment["suggested"]
+    kind = {"ELIGIBLE": "ok", "INELIGIBLE": "bad"}.get(suggested, "warn")
+    disagreements = judgment["cross_check_disagreements"]
+    return (
+        "<h2>Claude's CV comparison</h2><div class=card>"
+        f"{badge('info', 'Claude session judgment #' + str(judgment['id']))} "
+        f"suggests {badge(kind, suggested)} "
+        f"<span class='small mute'>{e(', '.join(human(c) for c in judgment['reason_codes']))}"
+        f" · {tidy_date(judgment['created_at'])}</span>"
+        f"<p>{e(judgment['summary'])}</p>"
+        + (
+            f"{badge('warn', str(disagreements) + ' verdict(s) differ from the evidence score')} "
+            "Both are shown; the Python check and any hard blocker win."
+            if disagreements
+            else f"{badge('ok', 'agrees with the evidence score')}"
+        )
+        + "<p class='small mute'>Written locally by Claude from the approved CV profile. Every quote was "
+        "checked against the profile and the job text before saving. A suggestion is not "
+        "employer-confirmed hiring in Pakistan.</p>"
+        "<table><tr><th>Requirement</th><th>Verdict</th><th>Job text</th><th>CV evidence</th>"
+        f"<th>Note</th></tr>{''.join(rows)}</table></div>"
+    )
+
+
 def assessment_panel(detail, cli_hint) -> str:
     entry, explain = detail["entry"], detail["explanation"]
     history = detail["assessments"]
@@ -502,7 +668,9 @@ def assessment_panel(detail, cli_hint) -> str:
             )
             + f'<br><span class="small mute">Assessing sends the job text to Gemini and is billable; '
             f"the dashboard never does it. Run, after your explicit decision: "
-            f"<code>{e(cli_hint)}</code></span></div>"
+            f"<code>{e(cli_hint)}</code><br>Or compare it with the CV locally, with no API call, "
+            f"in a Claude Code session: <code>{e(CLI_JUDGE.format(id=detail['job']['id']))}</code>"
+            f"</span></div>"
         )
     else:
         t = explain["technical"]
@@ -514,12 +682,32 @@ def assessment_panel(detail, cli_hint) -> str:
             f"<dl class=kv><dt>Evidence coverage</dt><dd>{e(t['evidence_coverage'])}%</dd>"
             f"<dt>Score ceiling</dt><dd>{e(t['score_ceiling'])} (the score if every unverified finding were later confirmed)</dd>"
             f"<dt>Applicable weight</dt><dd>{e(t['applicable_weight'])} of 100</dd>"
-            f"<dt>Assessment</dt><dd>#{e(explain.get('assessment_id'))} · {e(explain.get('assessment_mode'))}</dd>"
+            f"<dt>Assessment</dt><dd>#{e(explain.get('assessment_id'))} · "
+            f"{e(MODE_LABELS.get(explain.get('assessment_mode'), explain.get('assessment_mode')))}"
+            f" · {tidy_date(_created(explain))} · {badge('ok', 'current')}</dd>"
             f"<dt>Findings</dt><dd>{badge('ok', 'MATCHED ' + str(t['counts']['MATCHED']))} "
             f"{badge('info', 'PARTIAL ' + str(t['counts']['PARTIAL']))} "
             f"{badge('bad', 'UNMATCHED ' + str(t['counts']['UNMATCHED']) + ' (verified gaps)')} "
             f"{badge('warn', 'UNVERIFIED ' + str(t['counts']['UNVERIFIED']) + ' (unresolved)')}</dd></dl>"
-            '<p class="small mute">A low-confidence score is evidence-limited. It does not reject the job, '
+            + (
+                f"<p><b>Final Module 3 decision: "
+                f"{badge({'ELIGIBLE': 'ok', 'INELIGIBLE': 'bad'}.get(explain['final']['status'], 'warn'), explain['final']['status'])}"
+                f"</b> {e(explain['final']['detail'])} "
+                f"<span class='small mute'>[{e(explain['final']['reason_code'])}] Suitability for "
+                f"applying only; Pakistan hiring stays the Module 2 status.</span></p>"
+                if explain.get("final")
+                else ""
+            )
+            + (
+                f"<p class='small'>Session judgment #{e(explain['judgment']['id'])} "
+                f"({e(explain['judgment']['labeler'])}, read the approved profile locally): suggested "
+                f"<b>{e(explain['judgment']['suggested'])}</b> — {e(explain['judgment']['summary'])} "
+                f"<span class='mute'>The score above is the deterministic cross-check; "
+                f"{e(explain['judgment']['cross_check_disagreements'])} verdict(s) differ from it.</span></p>"
+                if explain.get("judgment")
+                else ""
+            )
+            + '<p class="small mute">A low-confidence score is evidence-limited. It does not reject the job, '
             "is not proof of poor suitability, and is not an employment-eligibility decision.</p></div>"
         )
         comp = "".join(
@@ -664,7 +852,10 @@ def job_page(detail, csrf, next_path) -> str:
     )
     head = (
         f"<p><b>{e(job['company'])}</b> · #{job['id']} · {lifecycle_badge(job['status'], job['is_listed'] == 1)} "
+        f"<span class='small mute'>Pakistan hiring (Module 2):</span> "
         f"{eligibility_badge(row['eligibility'], row['classification_stale']) if row else ''} "
+        f"<span class='small mute'>Suitability (Module 3):</span> "
+        f"{final_badge(row.get('final_status'), row.get('final_code'), row.get('final_detail')) if row else ''} "
         f"{app_badge(detail['application'])}</p>"
         f"<p>{link_url(job['source_url'], 'Open original posting')} · {link_url(job['application_url'], 'Open apply link')}"
         f' · <span class="small mute">links open the employer or provider site; the dashboard never applies for you</span></p>'
@@ -688,6 +879,7 @@ def job_page(detail, csrf, next_path) -> str:
         + module2_panel(detail["classification"], row)
         + "<h2>Module 3 technical match</h2>"
         + assessment_panel(detail, CLI_ASSESS.format(id=job["id"]))
+        + judgment_panel(detail["explanation"])
         + "<h2>Manual eligibility reviews</h2>"
         + review_panel(detail, csrf, next_path)
         + "<h2>Job information</h2>"
@@ -731,6 +923,17 @@ def rankings(ranked, queue, params, profile) -> str:
             [("", "Any"), ("high", "High"), ("medium", "Medium"), ("low", "Low")],
             params.get("confidence", ""),
         )
+        + _select(
+            "final",
+            "Final decision (M3)",
+            [
+                ("", "Any"),
+                ("ELIGIBLE", "Eligible"),
+                ("UNVERIFIED", "Unverified"),
+                ("INELIGIBLE", "Ineligible"),
+            ],
+            params.get("final", ""),
+        )
         + "<button>Filter</button></form>"
     )
     rows = "".join(
@@ -738,6 +941,7 @@ def rankings(ranked, queue, params, profile) -> str:
         f"<span class='small mute'>{e(r['company'])} · #{r['job_id']}</span></td>"
         f"<td>{match_cell({'assessment_status': 'current', 'score': r['technical']['score'], 'confidence': r['technical']['confidence_level'], 'coverage': r['technical']['evidence_coverage'], 'ceiling': r['technical']['score_ceiling']})}</td>"
         f"<td>{eligibility_badge(r['module2']['status'])}</td>"
+        f"<td>{badge({'ELIGIBLE': 'ok', 'INELIGIBLE': 'bad'}.get((r.get('final') or {}).get('status'), 'warn'), (r.get('final') or {}).get('status', '-'))}</td>"
         f"<td class=small>M {r['technical']['counts']['MATCHED']} · P {r['technical']['counts']['PARTIAL']} · "
         f"U {r['technical']['counts']['UNMATCHED']} · V {r['technical']['counts']['UNVERIFIED']}</td>"
         f"<td class=small>{e(INTERPRETATIONS.get(r['technical']['interpretation'], ''))}"
@@ -746,7 +950,7 @@ def rankings(ranked, queue, params, profile) -> str:
         for r in ranked["ranked"]
     )
     table = (
-        "<table><tr><th>#</th><th>Job</th><th>Technical match</th><th>Module 2</th>"
+        "<table><tr><th>#</th><th>Job</th><th>Technical match</th><th>Module 2</th><th>Final (M3)</th>"
         "<th>M / P / unmatched / unverified</th><th>Explanation</th></tr>" + rows + "</table>"
         if rows
         else f'<div class="card mute">{e(ranked["empty_state"] or "No ranked job matches.")}</div>'
@@ -870,7 +1074,8 @@ def review_queue_page(result) -> str:
 # --- My Applications -------------------------------------------------------------------
 
 
-def applications_page(listing, counts, params, page, pages) -> str:
+def applications_page(listing, counts, params, page, pages, finals=None) -> str:
+    finals = finals or {}
     chips = " ".join(
         f'<a href="/applications?{query({}, status=s)}">{badge("neutral", f"{s} {n}")}</a>'
         for s, n in counts["by_status"].items()
@@ -894,6 +1099,7 @@ def applications_page(listing, counts, params, page, pages) -> str:
         f"<tr><td><a href='/jobs/{a['job_id']}'><b>{e(a['title'] or 'Job #' + str(a['job_id']) + ' (record merged or missing)')}</b></a><br>"
         f"<span class='small mute'>{e(a['company'] or '')} · #{a['job_id']}</span></td>"
         f"<td>{app_badge(a)}</td>"
+        f"<td>{final_badge(finals.get(a['job_id']))}</td>"
         f"<td>{lifecycle_badge(a['job_status'], a['is_listed'] == 1) if a['job_status'] else '<span class=mute>unknown</span>'}"
         f"<br><span class='small mute'>source state, independent of your status</span></td>"
         f"<td class=small>applied {e(a['applied_on'] or '—')}<br>follow-up <b>{e(a['follow_up_on'] or '—')}</b></td>"
@@ -903,7 +1109,7 @@ def applications_page(listing, counts, params, page, pages) -> str:
     )
     if rows:
         table = (
-            "<table><tr><th>Job</th><th>My status</th><th>Source job state</th><th>Dates</th>"
+            "<table><tr><th>Job</th><th>My status</th><th>Final (M3)</th><th>Source job state</th><th>Dates</th>"
             f"<th>Notes</th><th></th></tr>{rows}</table>"
         )
     elif counts["total"] == 0:
