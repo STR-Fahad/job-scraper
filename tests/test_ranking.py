@@ -267,6 +267,7 @@ def test_current_stale_and_missing_assessments(store):
         "stale": 1,
         "awaiting_assessment": 1,
         "restricted_not_recommended": 0,
+        "final": {"ELIGIBLE": 1, "INELIGIBLE": 0, "UNVERIFIED": 0},
     }
     assert _ids(data) == [ids["current"]]  # stale scores never rank
     waiting = ranking.queue(store, CONFIG)

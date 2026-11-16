@@ -19,7 +19,8 @@ Sort order (ascending key, so the first row is the best):
 
 import json
 
-from . import reviews
+from . import judge, reviews
+from .decision import decide
 from .experience import compare, requirement_in_context
 from .matching import HIGH_SCORE, _job_input, _rule_hash, candidates, latest_profile
 from .processing import inspect_results
@@ -240,15 +241,38 @@ def build(store, config, *, include_history=False, model=None, job_id=None) -> l
     sources: dict[int, list[dict]] = {}
     for r in store.db.execute("SELECT job_id,source,board FROM job_sources ORDER BY rowid"):
         sources.setdefault(r[0], []).append({"source": r[1], "board": r[2]})
+    judgment_rules = judge.judgment_rule_hash(config)
     stored: dict[int, list] = {}
+    judged: dict[int, list] = {}
     for r in store.db.execute("SELECT * FROM ai_assessments ORDER BY id DESC"):
-        stored.setdefault(r["job_id"], []).append(r)
+        # Session judgments are additive rows kept apart from the Gemini/offline assessments.
+        target = judged if r["model"].startswith(judge.MODEL_PREFIX) else stored
+        target.setdefault(r["job_id"], []).append(r)
     manual = reviews.latest(store, reviews.fingerprints(store))
     output = []
     for item in queue:
         identity = item["job_id"]
         fingerprint = _job_input(store, item)[0]
         current, summaries = _assess(stored.get(identity, []), approved, fingerprint, rules, model)
+        # A current session judgment supplies the deterministic cross-check and the verdicts.
+        session = judge.pick_current(
+            judged.get(identity, []), approved, fingerprint, judgment_rules
+        )
+        if session:
+            current = session
+        elif judged.get(identity) and not summaries:
+            summaries = [
+                {
+                    "id": r["id"],
+                    "mode": judge.MODE,
+                    "model": r["model"],
+                    "score": r["score"],
+                    "created_at": r["created_at"],
+                    "current": False,
+                    "stale_reasons": ["session_judgment_outdated"],
+                }
+                for r in judged[identity]
+            ]
         job = jobs[identity]
         row = {
             "job_id": identity,
@@ -271,9 +295,15 @@ def build(store, config, *, include_history=False, model=None, job_id=None) -> l
             "assessment_mode": None,
             "findings": [],
             "excluded": [],
+            "judgment": None,
+            "judgment_requirements": [],
         }
         if current:
             saved, result = current
+            if session:
+                row["judgment"] = judge.summary(result, saved["id"], saved["created_at"])
+                row["judgment_requirements"] = result["judgment"]["requirements"]
+                row["judgment_cross_check"] = result["judgment"]["cross_check_disagreements"]
             row["technical"] = _technical(result)
             row["assessment_id"] = saved["id"]
             row["assessment_mode"] = result.get("assessment_mode", "live")
@@ -291,12 +321,15 @@ def build(store, config, *, include_history=False, model=None, job_id=None) -> l
             if current
             else "awaiting_current_assessment"
         )
+        row["final"] = decide(row)
         output.append(row)
     return output
 
 
-def _matches(row, *, eligibility, confidence, min_score, source):
+def _matches(row, *, eligibility, confidence, min_score, source, final=None):
     if eligibility and row["module2"]["status"] != eligibility:
+        return False
+    if final and (row.get("final") or {}).get("status") != final:
         return False
     technical = row["technical"]
     if confidence and technical["confidence_level"] != confidence:
@@ -310,7 +343,8 @@ def _matches(row, *, eligibility, confidence, min_score, source):
 
 def _public(row) -> dict:
     """List view: summary without the finding-level detail."""
-    return {key: value for key, value in row.items() if key not in {"findings", "excluded"}}
+    hidden = {"findings", "excluded", "judgment_requirements"}
+    return {key: value for key, value in row.items() if key not in hidden}
 
 
 def rank(
@@ -326,6 +360,7 @@ def rank(
     restricted="show",
     limit=None,
     population=None,
+    final=None,
 ) -> dict:
     """Recommended ranking, plus a separate non-recommended section for current restrictions.
 
@@ -350,7 +385,12 @@ def rank(
 
     def keep(row):
         return _matches(
-            row, eligibility=eligibility, confidence=confidence, min_score=min_score, source=source
+            row,
+            eligibility=eligibility,
+            confidence=confidence,
+            min_score=min_score,
+            source=source,
+            final=final,
         )
 
     shown = [r for r in current if keep(r)] if restricted != "only" else []
@@ -361,6 +401,10 @@ def rank(
         "stale": sum(r["assessment_status"] == "stale" for r in open_rows),
         "awaiting_assessment": sum(r["assessment_status"] == "missing" for r in open_rows),
         "restricted_not_recommended": len(held),
+        "final": {
+            status: sum((r.get("final") or {}).get("status") == status for r in population)
+            for status in ("ELIGIBLE", "INELIGIBLE", "UNVERIFIED")
+        },
     }
     if limit:
         shown, held_shown = shown[:limit], held_shown[:limit]
@@ -614,6 +658,11 @@ def _row_lines(row, number) -> list[str]:
         f"unmatched {counts['UNMATCHED']} | unverified {counts['UNVERIFIED']}"
     )
     lines.append(f"     {technical['interpretation']}")
+    final = row.get("final")
+    if final:
+        lines.append(
+            f"     FINAL (Module 3): {final['status']} [{final['reason_code']}] {final['detail']}"
+        )
     lines.append(
         f"     Module 2: {row['module2']['status']}"
         f"{' (stale)' if row['module2']['stale'] else ''} | manual review: "
@@ -632,6 +681,9 @@ def render_rank(data) -> str:
         f"Population {counts['population']} | current assessments {counts['current']} | "
         f"stale {counts['stale']} | awaiting assessment {counts['awaiting_assessment']} | "
         f"manually restricted {counts['restricted_not_recommended']}",
+        "Final Module 3 decisions: "
+        + " | ".join(f"{k} {v}" for k, v in counts["final"].items())
+        + " (suitability for applying; Pakistan hiring is the separate Module 2 status)",
     ]
     if data["empty_state"]:
         lines += ["", data["empty_state"]]
@@ -669,6 +721,29 @@ def render_queue(data) -> str:
     return "\n".join(lines)
 
 
+def _final_line(data) -> list[str]:
+    final = data.get("final")
+    lines = (
+        [f"FINAL (Module 3): {final['status']} [{final['reason_code']}] {final['detail']}"]
+        if final
+        else []
+    )
+    judgment = data.get("judgment")
+    if judgment:
+        lines.append(
+            f"Session judgment #{judgment['id']} ({judgment['labeler']}): suggested "
+            f"{judgment['suggested']} [{', '.join(judgment['reason_codes'])}]; "
+            f"{judgment['cross_check_disagreements']} verdict(s) differ from the Python "
+            "evidence states (deterministic score shown below is the cross-check)"
+        )
+        lines += [
+            f"  {v['requirement_id']} {v['verdict']}: {v['job_quote'][:90]}"
+            for v in data.get("judgment_requirements", [])
+            if v["verdict"] != "not_applicable"
+        ]
+    return lines
+
+
 def render_explain(data) -> str:
     if not data.get("in_ranking_population", True):
         return (
@@ -687,6 +762,7 @@ def render_explain(data) -> str:
         f"Application URL: {data['application_url'] or 'not provided'}",
         f"Source URL: {data['source_url']}",
         f"Assessment: {data['assessment_status']} | recommendation: {data['recommendation']}",
+        *_final_line(data),
     ]
     technical = data["technical"]
     if technical:

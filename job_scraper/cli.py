@@ -13,6 +13,7 @@ from .config import load_settings
 from .discovery import discover
 from .gemini import check_connection
 from .http import CollectionError, HttpClient
+from .judge import JudgmentError, export_packet, import_judgment
 from .matching import (
     analyze,
     approve_profile,
@@ -94,7 +95,17 @@ def main(argv=None):
     profile.add_argument("--file", type=Path, help="PDF for import; reviewed JSON for approve")
     profile.add_argument("--output", type=Path, default=Path("data/candidate-profile-review.json"))
     matching = sub.add_parser("match", help="Preview or analyze technical matches")
-    matching.add_argument("action", choices=["candidates", "analyze", "rescore", "results"])
+    matching.add_argument(
+        "action",
+        choices=["candidates", "analyze", "rescore", "results", "judge-export", "judge-import"],
+    )
+    matching.add_argument("--file", type=Path, help="judge-import: the verdict JSON to validate")
+    matching.add_argument("--output", type=Path, help="judge-export: packet path")
+    matching.add_argument(
+        "--carry-over",
+        action="store_true",
+        help="judge-import: accept a verdict made under an earlier approved profile and label it",
+    )
     matching.add_argument("--live", action="store_true", help="Authorize billable Gemini requests")
     matching.add_argument("--limit", type=positive_int)
     matching.add_argument("--job-id", type=int)
@@ -105,6 +116,11 @@ def main(argv=None):
     ranking.add_argument("--job-id", type=int)
     ranking.add_argument("--eligibility", choices=["ELIGIBLE", "UNVERIFIED"])
     ranking.add_argument("--confidence", choices=["high", "medium", "low"])
+    ranking.add_argument(
+        "--final",
+        choices=["ELIGIBLE", "INELIGIBLE", "UNVERIFIED"],
+        help="Filter by the final Module 3 suitability decision",
+    )
     ranking.add_argument("--min-score", type=score_value)
     ranking.add_argument("--source", choices=sorted(COLLECTORS))
     ranking.add_argument("--assessment-status", choices=["stale", "missing"])
@@ -220,6 +236,23 @@ def main(argv=None):
                             include_history=args.include_history,
                             job_id=args.job_id,
                         )
+                    elif args.action == "judge-export":
+                        if args.job_id is None:
+                            raise ValueError("match judge-export requires --job-id")
+                        output = export_packet(store, settings.matching, args.job_id, args.output)
+                    elif args.action == "judge-import":
+                        if args.file is None:
+                            raise ValueError("match judge-import requires --file")
+                        try:
+                            output = import_judgment(
+                                store, settings.matching, args.file, carry_over=args.carry_over
+                            )
+                        except JudgmentError as exc:
+                            print(
+                                json.dumps({"saved": False, "reasons": exc.reasons}, indent=2),
+                                file=sys.stderr,
+                            )
+                            return 1
                     elif args.action == "rescore":
                         output = rescore(
                             store,
@@ -263,6 +296,7 @@ def main(argv=None):
                             confidence=args.confidence,
                             min_score=args.min_score,
                             source=args.source,
+                            final=args.final,
                             restricted="hide"
                             if args.hide_restricted
                             else "only"
