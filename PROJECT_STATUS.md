@@ -2,6 +2,99 @@
 
 **Observed 2026-11-01 (Asia/Karachi); updated through Module 4 on 2026-11-04.** Recheck before acting; this is a snapshot, not a permanent count. See `PROJECT_HANDBOOK.md` for the architecture and rules.
 
+## 2026-11-16 — Commits for the work since Module 4 (code and tests committed; documentation follows)
+
+| Item | Result |
+|---|---|
+| Commits | `b279741` MODULE_2_3_REFRESH_QUALITY_AND_PARSER_FIXES (Module 2 v3.9, requirements-v4, evidence-v12, config boards); `78e1e93` MODULE_3_FINAL_DECISION_AND_SESSION_JUDGMENT (`decision.py` final-v4, `judge.py`, ranking/CLI wiring); `82dd6f8` DASHBOARD_FOCUS_MAIN_PAGE (Focus page, More menu, new colours). All on `main`, not pushed |
+| Verification at the committed state | Full suite **877 passed**; Ruff check and format, `pip check` clean; real database `integrity_check` ok, 0 foreign-key violations; 238 judged jobs (Eligible 12 / Ineligible 165 / Unverified 61 under final-v4); profile v3 approved |
+| Not committed (intentionally) | `.claude/launch.json` (local preview config), everything under ignored `work/` and `data/` (evidence, judgments, database, backups) |
+| Known limits | Judgments of 210 jobs were carried over from profile v2, not re-judged; the policy tags read only what the approved profile shows; Linux/cloud/distributed-systems evidence would resolve more Unverified jobs; location-unclear jobs stay Unverified |
+
+## 2026-11-16 — Fewer Unverified: three approved policy rules, `final-v4` (committed 2026-11-16, see the commit block above)
+
+| Item | Result |
+|---|---|
+| Why | 132 of 238 judged jobs were Unverified. Analysis: 44 wrong role type, 35 location/office unclear, 7 mostly supported, 10 barely supported, 36 in between; the missing-evidence leaders were Linux (43 jobs), cloud (22), kernel/embedded (20), distributed systems (20), open source (19) |
+| Rules (user-approved 2026-11-16, derived at read time in `decision.py`, nothing stored) | **1 out_of_scope**: judgment reason codes name a non-software role type (support, QA, developer relations, research-level, FinOps, hardware enablement) → INELIGIBLE. **3 good_enough_fit**: ≥60% of ≥3 mandatory (`req`) verdicts met/partial, none unmet, no open location/office/language code, score rules not INELIGIBLE → ELIGIBLE. **4 poor_fit**: ≤25% of ≥4 mandatory verdicts supported → INELIGIBLE. Rule 2 (location default) was not adopted: location-unclear jobs stay Unverified |
+| Effect on real data | Unverified 132 → 61, Ineligible 101 → 165 (48 out_of_scope, 16 poor_fit), Eligible 5 → 12 (7 good_enough_fit: 2879 Nexoya, 2896 Bromcom, 2918 and 2919 Tether, 5110 and 5124 Canonical, 5182 Supabase). Hard blockers and a confirmed judgment still win; tags name the rule that fired |
+| Tests | 4 new decision tests; full suite **877 passed**, Ruff/`pip check`/`git diff --check` clean; dashboard restarted |
+| Limits | Policy tags read only what the approved profile shows (missing evidence is not proof of a missing skill); Linux, cloud and similar facts from the owner would resolve more jobs |
+
+## 2026-11-16 — Profile v3 approved by the user and carried-over judgments (committed 2026-11-16, see the commit block above)
+
+| Item | Result |
+|---|---|
+| Approval | The user approved `work/evidence/PROFILE_V3_FOR_APPROVAL.json`; `profile approve` created **version 3**, hash `10af4f25…`, 15 months unchanged (v2 row untouched). A verified backup `data/backups/jobs-pre-profile-v3-*` was taken first. The profile sanitizer rejected GitHub URLs, so the approved copy cites repos by name; full URLs stay in the evidence report |
+| Effect | All 328 earlier assessments became stale (kept). Added `match judge-import --carry-over`: accepts a verdict made under an EARLIER APPROVED profile (never an unknown hash), re-checks every quote against the current profile and labels the row `provenance.carried_over_from_profile_hash`; the Focus card says "judged under an earlier profile; not yet re-judged with v3". 210 of 219 verdict files were carried over (the other 9 are verdicts for jobs logged as skipped because of the parser false positive and never imported). Not a re-judgment |
+| State | 210 current judgments; final ELIGIBLE 5 / INELIGIBLE 88 / UNVERIFIED 117 (unchanged); integrity ok, 0 foreign-key violations, 538 assessments; dashboard restarted (Eligible 4 + 1 applied, Unverified 117, Ineligible 88). Suite **873 passed**, Ruff clean |
+| Next | Re-judge under v3 the jobs that can gain from the new evidence: the top 15 and P1/P2 jobs in `work/evidence/NARROWING_ANALYSIS.md` (not started; needs the user's go) |
+
+## 2026-11-16 — GitHub evidence analysis and profile v3 DRAFT (read-only; now approved, see above)
+
+| Item | Result |
+|---|---|
+| Source | GitHub CLI logged in as the owner's personal account (read-only `gh` calls): 23 repos (1 private, solo Rails 8 app), 2 merged PRs (both in the owner's team repo), no org memberships. The Dubizzle work is **not visible** from this account (three public Dubizzle orgs exist; no membership, no SSO header) |
+| Output (Git-ignored, under `work/evidence/`) | `PROFILE_V3_DRAFT.json` (schema-valid, every new line tagged `[DRAFT v3 - NOT APPROVED]` with its source URL; professional entries and the 15-month snapshot identical to v2), `PROFILE_V3_EVIDENCE_REPORT.md`, `NARROWING_ANALYSIS.md`, raw data in `github/` |
+| Evidence effect | Personal/academic repos are PROJECT evidence only. After the owner's answers (the team repo written by the owner; the private Rails repo is the existing Instagram chat bot project) the deterministic scorer would move CLIP, PEFT, Webhooks to project and add Go, TypeScript, Expo, OpenAPI as project; Docker, PostgreSQL, GitHub Actions, CI/CD, Git/GitHub, testing stay listed-only to it (its project detector is alias-based), though the session judge can cite the narrative. Code check: the chat bot has a pgvector retrieval layer but no tool/function calling, so agents and tool calling stay unproven. `PROFILE_V3_FOR_APPROVAL.json` is an unapproved, tag-free copy; nothing was imported |
+| Database | Unchanged: profile v2 still the only approved profile (hash `937592b4ca8e`); no assessment or classification written; no jobs re-judged |
+| Open | Facts to confirm before v3 can be approved are listed in section 6 of the report; the Dubizzle work needs the right GitHub account or an export |
+
+## 2026-11-11 — Judging batches 2 and 3, parser fix `evidence-v12` (committed 2026-11-16, see the commit block above)
+
+| Item | Result |
+|---|---|
+| Batch 2 | 25 jobs sent (Canonical, Supabase non-senior, plus GitLab #2932 and Tether #2919; support, sales and trainer titles dropped); 24 saved, 1 skipped. GitLab #2932 became the 4th ELIGIBLE; everything else UNVERIFIED. The session stopped itself only on a usage check (5-hour limit read at 46-57%, guard at 98%) |
+| Parser fix | Job 4997 failed import because "a 10 year enterprise security commitment" was read as a 10-year candidate minimum (also "up to 15 years of security and maintenance commitments"). `experience.COMMITMENT_AFTER` now skips employer promises; **`EVIDENCE_VERSION` is `evidence-v12`**, so all judgments went stale and the 70 saved verdict files were re-imported without re-judging (70 saved, 0 rejected). Suite **871 passed**, Ruff clean |
+| State after | 70 current judgments; final ELIGIBLE 4 / INELIGIBLE 1 (550) / UNVERIFIED 65; integrity ok, 0 foreign-key violations, 188 assessments (184 session rows incl. re-imports) |
+| Batch 3 | 17 Arbeitnow jobs that are explicitly remote and match the target stack (the other 87 target-stack Arbeitnow jobs have no workplace flag, i.e. city offices, and were held back): 17 saved, 0 skipped. New ELIGIBLE: ElevenLabs #4092; new INELIGIBLE: Tether #2897 (internship for MSc/PhD candidates) and #2900 (Master's degree required); the 14 others UNVERIFIED (mostly Tether AI research roles). 5-hour limit read 13%, weekly 17% afterwards |
+| State after batch 3 | 87 jobs judged (of 1,141): ELIGIBLE 5 / INELIGIBLE 3 / UNVERIFIED 79; integrity ok, 0 foreign-key violations, 205 assessments (201 session rows). 1,054 still unjudged: ~538 senior titles, ~87 office-based Arbeitnow target-stack jobs, ~231 other Arbeitnow, 175 German/French postings |
+
+## 2026-11-11 — Dashboard main page redesigned: Focus view (committed 2026-11-16, see the commit block above)
+
+| Item | Result |
+|---|---|
+| Behavior | `/` is now the Focus page (template 1 chosen by the user): Eligible / Unverified / Ineligible tabs from the Module 3 final decision, search and source filter, expandable job cards, **Mark applied** (tracker status APPLIED) that removes a job from the filters into an **Applied** tab, with **Undo** (back to SAVED). Only judged, active, listed jobs are listed; the count of unjudged jobs links to Job Explorer. Overview moved to `/overview`; other pages are under a **More** menu. New warm-paper / forest-green scheme on every page |
+| Code | New `dashboard/focus.py`; `render.py` (nav, layout, CSS), `app.py` (routes); no schema or tracker change, no JavaScript (CSP unchanged) |
+| Tests | 4 new Focus tests and 2 updated (`/overview`); full suite **870 passed**, Ruff/`pip check`/`git diff --check` clean. Real database: integrity ok, 0 applications created by testing (the apply flow was exercised on a temporary database in tests only) |
+| Limits | Pages show 25 jobs each; the unjudged jobs are not listed on the main page; closed or unlisted jobs are hidden from the filters; narrow screens stack the buttons under each card |
+
+## 2026-11-06 — Module 3 session judgment `judgment-v1`, decision `final-v2` (committed 2026-11-16, see the commit block above)
+
+| Item | Result |
+|---|---|
+| Behavior | Claude in a local Claude Code session judges one job against the **approved sanitized profile**; no Gemini, no API key, no external request. `match judge-export --job-id N` writes a review packet (numbered job items, profile segments with P-IDs, skills catalog, fixed 15-month experience, untrusted-data notice, verdict template) to ignored `work/judgments/`; the session writes `work/judgments/job-N.json`; `match judge-import --file PATH` validates in Python and only then saves. Invalid files save nothing and list every reason (exit 1) |
+| Validation | Job must be in the candidate population (Module 2 INELIGIBLE rejected); job fingerprint and profile hash must match; every requirement ID exactly once; job quote must be inside that item's text and CV quote inside the cited profile segment; skills-list-only evidence cannot be credited; `met` on a "professional/production" item needs `experience[...]` evidence and, for a named technology, evidence that names it; numeric total-experience minimums are decided by Python (contradicting verdict or project/education evidence rejected; the file has no years field); ELIGIBLE needs no unmet mandatory item; INELIGIBLE needs a Python-confirmed experience gap or a quoted unmet hiring condition; a missing skill alone cannot make INELIGIBLE |
+| Storage | Additive `ai_assessments` rows only (model `claude-session`, `-2`… for revisions; `assessment_mode` `session_judgment`; own rule hash = base rule hash + `judgment-v1`, so any Module 2/3 version change makes it stale). **No schema change.** A verified `jobs-pre-judgment-*` backup is made before the first such row. Existing assessments, classifications, profiles and history are untouched; the deterministic score is computed from the session's requirement kinds with the production resolver and stored beside the verdicts as the cross-check, with disagreements listed |
+| Decision | `decision.py` `final-v2`: hard blockers (current manual restriction; experience gap ≥ 12 months) first, then the judgment combined with the score rules: judgment ELIGIBLE + score rules INELIGIBLE → UNVERIFIED `judgment_conflicts_with_score`; judgment UNVERIFIED + score ceiling < 60 → INELIGIBLE; otherwise the more cautious of the two. A current judgment replaces the Gemini/offline assessment as the row's technical view in `rank`/dashboard; Gemini rows stay in the history |
+| INELIGIBLE rule fix (2026-11-11) | `judge-import` now rejects an INELIGIBLE whose blocker is an experience gap below `EXPERIENCE_GAP_INELIGIBLE_MONTHS` (12) or not a total-experience minimum; `decision.hard_blocker` is shared, and `decide` reads an older INELIGIBLE row with such a blocker as UNVERIFIED `judgment_blocker_not_confirmed` (job #22 was INELIGIBLE on a 9-month gap; it now reads UNVERIFIED; the stored row is unchanged). Suite **860 passed** |
+| Scoped-years fix (2026-11-11) | Years tied to one skill or area ("Strong Haskell skills with at least 3 years", "3+ years of experience building and operating cloud infrastructure") were read as total experience, so jobs 5205 and 5226 showed INELIGIBLE although the verdict said UNVERIFIED. `experience.scoped_years_text` now marks them scope `technology` at the source: **`EVIDENCE_VERSION` is `evidence-v11`**, `decision` is `final-v3` (also reads old rows by the same rule, and adds a note when scoped years exceed the career). The version bump made all session judgments stale; the 44 valid saved verdict files were re-imported (new revision rows, old rows kept) with no re-judging. `job-22.json` was rejected by the new INELIGIBLE rule and needs re-judging as UNVERIFIED. Now: 44 current judgments, final ELIGIBLE 3 / INELIGIBLE 1 (550) / UNVERIFIED 40, #22 stale. Suite **866 passed**, Ruff/`pip check`/`git diff --check` clean, integrity ok, 0 foreign-key violations |
+| Privacy change | The labeler sees the sanitized approved profile (previously only Gemini-side job text). It stays on this computer; the saved row records this in `provenance.privacy` |
+| Tests | New `tests/test_judge.py` (26 cases: valid save, read-only export, ranking use, staleness, tampered job, wrong profile, 13 rejection mutations, experience override, project-as-employment, Module 2 INELIGIBLE, manual restriction, prompt-injection line, combination rules, CLI + backup). Full suite **857 passed**; Ruff check/format, `pip check`, `git diff --check` clean. Real database (read-only URI): `integrity_check` ok, 0 foreign-key violations, 4 assessments, 0 session judgments. Dry run: `match judge-export --job-id 4982` produced a 64-item, 175-segment packet (114 KB) outside the repo; nothing was judged or saved on real jobs |
+| Limits | Judging is manual, one job at a time; a packet is large (~30k tokens). The labeler's CV-evidence check is textual (quote in segment, technology named), not semantic. `python_experience_comparison` in the packet is shown for any item containing a number of years, including non-experience wording; only items classified `exp` are enforced. Job text over 12,000 characters is refused. Thresholds (12 months, 60) untested against reviewed examples |
+
+## 2026-11-06 — Module 3 final suitability decision `final-v1` (committed 2026-11-16, see the commit block above)
+
+| Item | Result |
+|---|---|
+| Behavior | New `job_scraper/decision.py`: a derived, never-stored ELIGIBLE / INELIGIBLE / UNVERIFIED *suitability for applying* tag per ranking row. Module 2 INELIGIBLE jobs stay outside the population; Module 3 only tags the rest. Rules, first match wins: current manual `confirmed_restricted` → INELIGIBLE; confirmed total-experience minimum ≥ 12 months above approved (`EXPERIENCE_GAP_INELIGIBLE_MONTHS`, a judgment, not data-derived) → INELIGIBLE; score ceiling < 60 → INELIGIBLE; score ≥ 60 → ELIGIBLE; else UNVERIFIED. No current assessment → no tag. Missing CV skill alone never decides |
+| Separation | Pakistan hiring stays the Module 2 status, carried in the decision as `pakistan_hiring`; ELIGIBLE does not mean employer-confirmed hiring |
+| Wiring | `ranking.build` adds `final`; `rank list --final`, counts and text output, `rank explain`; dashboard: overview final-decision counts, "Final (M3)" column and filter in Job Explorer, rankings and My Applications, job-detail header with separate "Pakistan hiring (Module 2)" and "Suitability (Module 3)" labels, "Not judged yet" view (`/jobs?final=none`); dashboard tests 18 |
+| No migration | No schema change, no assessment or cache invalidation, no Gemini call, profile untouched |
+| Tests | New `tests/test_decision.py`; one existing counts assertion updated. Full suite **829 passed**; Ruff check/format, `pip check`, `git diff --check` clean. Real database read with `rank list` only |
+| Limits | All current assessments are stale, so every job shows no decision until re-assessed (paid, needs your authorization). Thresholds (12 months, 60) are untested against real reviewed examples |
+
+## 2026-11-04 — Database refresh and Module 2/3 quality improvement (committed 2026-11-16, see the commit block above)
+
+| Item | Result |
+|---|---|
+| Collection | `collect --all --max-pages 10` (Himalayas and Arbeitnow partial, Remotive exhaustive and closed 1 job) plus new boards Canonical (Greenhouse, 314) and Supabase (Ashby, 69). 2,985 → 5,250 jobs; 0 merged, 0 errors; population 781 → 1,141 |
+| Module 2 | `pakistan-0-3-v3.9`: year parsing under headings and context words, time-frame months no longer experience, conditional office rules cannot exclude, student-only roles INELIGIBLE, provider location text ("Home based - Worldwide", "Remote, Global"), "every time zone" and "work from home" wording |
+| Module 3 | `requirements-v4` / `evidence-v10`: relevance needs a software-engineering title; ambiguous location policy (GitLab R051) normalizes `nonreq` to `unresolved` with a saved trace; job-board footers are not hiring conditions; Module 3B reads number words and brackets like Module 2; unmarked "X or Y" lists are alternatives, slash lists stay unresolved. Prompt, schema, scoring unchanged; rule hash `d3840f80db715d79` |
+| Cache | assessments #1–#4 are stale and preserved; offline rescore cannot refresh them (compatibility contract); no replacement was generated |
+| Tests | **815 passed** (695 + 120); Ruff, `pip check`, `git diff --check` clean; integrity ok, foreign keys 0; no Gemini request |
+| Reports | `work/DATABASE_REFRESH_AND_SOURCE_AUDIT.md`, `work/MODULE_2_3_QUALITY_IMPROVEMENT.md`, `work/PROMISING_REMOTE_ENGINEERING_JOBS.md` |
+
 ## 2026-11-04 — Module 4 local dashboard and application tracking (committed with `92b1d2a`, tag `module-4-dashboard-application-tracking`)
 
 | Item | Result |
@@ -120,7 +213,7 @@ The documentation task made **no application code or configuration changes**. Te
 | Component | Status and execution evidence |
 |---|---|
 | Module 1 collection | Six collectors implemented. Earlier live feed checks are documented in `HARDENING_REPORT.md`; current live freshness was not reverified during this documentation task. Lifecycle, source registry/discovery and safe migrations exist. |
-| Module 2 screening | Implemented in `screening.py`/`processing.py`, with extensive regressions. Current rule version `pakistan-0-3-v3.6`. |
+| Module 2 screening | Implemented in `screening.py`/`processing.py`, with extensive regressions. Current rule version `pakistan-0-3-v3.9`. |
 | Module 3A Gemini | Official `google-genai` integration and synthetic connectivity probe implemented. No connectivity probe run in this documentation task. |
 | Module 3B.1 | CV review/profile versioning, numbered requirements, role-only Gemini classification, Python evidence and deterministic score, SQLite cache implemented. One real job-22 assessment succeeded on 2026-10-29 (report in ignored `work/MODULE_3B1_FINAL_LIVE_TEST.md`). |
 | Module 3B.2 | Implemented offline and uncommitted (see the 2026-11-02 sections): local ranking, assessment queue, explanations, append-only manual eligibility review, restricted-job separation and outdated-review detection. |
