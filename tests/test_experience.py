@@ -590,7 +590,7 @@ def test_module2_screening_does_not_depend_on_the_experience_representation():
 
     import job_scraper.screening as screening
 
-    assert VERSION == "pakistan-0-3-v3.6"
+    assert VERSION == "pakistan-0-3-v3.9"
     assert "experience_months" not in Path(screening.__file__).read_text(encoding="utf-8")
     result = classify(_job("x", description=ELIGIBLE_TEXT))
     assert result.status == "ELIGIBLE"
@@ -661,7 +661,7 @@ def test_the_rule_hash_separates_the_old_and_new_experience_rules():
     current = matching._rule_hash(CONFIG)
     previous = matching._rule_hash(CONFIG, scoring="score-v5", evidence="evidence-v8")
     assert current != previous
-    assert (matching.SCORING_VERSION, matching.EVIDENCE_VERSION) == ("score-v6", "evidence-v9")
+    assert (matching.SCORING_VERSION, matching.EVIDENCE_VERSION) == ("score-v6", "evidence-v12")
 
 
 def test_an_assessment_saved_under_the_earlier_experience_rules_is_stale_and_rescorable_offline(
@@ -682,7 +682,7 @@ def test_an_assessment_saved_under_the_earlier_experience_rules_is_stale_and_res
         rows = store.db.execute("SELECT * FROM ai_assessments ORDER BY id").fetchall()
         assert tuple(rows[0]) == frozen
         new = json.loads(rows[1]["result"])
-        assert (new["scoring_version"], new["evidence_version"]) == ("score-v6", "evidence-v9")
+        assert (new["scoring_version"], new["evidence_version"]) == ("score-v6", "evidence-v12")
         assert new["provenance"]["source_evidence_version"] == "evidence-v8"
         assert [x["stale"] for x in results(store, RESCORE_CONFIG)] == [False, True]
 
@@ -839,3 +839,18 @@ def test_job22_is_unchanged_under_the_new_versions_and_earns_no_extra_credit():
         r for r in resolved if r["kind"] != "exp" and r["match_state"] in {"MATCHED", "PARTIAL"}
     ]
     assert credited == [] and scored["score"] == 0
+
+
+def test_employer_commitments_are_not_candidate_experience_minimums():
+    from job_scraper.experience import parse_requirement
+
+    for text in (
+        "- You will work on a 10 year enterprise security commitment",
+        "with up to 15 years of security and maintenance commitments for Long Term Support (LTS) releases",
+        "a 10 year support lifecycle for each release",
+    ):
+        assert parse_requirement(text) is None, text
+    # genuine requirements are unchanged, including security experience
+    assert parse_requirement("5+ years of experience").minimum_months == 60
+    assert parse_requirement("5 years of security experience").minimum_months == 60
+    assert parse_requirement("3+ years of experience building and operating cloud infrastructure")

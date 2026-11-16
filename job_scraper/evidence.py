@@ -13,10 +13,11 @@ from .experience import (
     months_from_years,
     parse_requirement,
     requirement_in_context,
+    scoped_years_text,
     with_kind,
 )
 
-EVIDENCE_VERSION = "evidence-v9"
+EVIDENCE_VERSION = "evidence-v12"
 MAX_SEGMENT_CHARS = 420
 KINDS = ("req", "pref", "exp", "duty", "match", "transfer", "missing", "eligibility", "unresolved")
 SCHEMA = {
@@ -551,6 +552,43 @@ def alternative_group(source: str, labels: list[str]) -> tuple[list[str], bool] 
     return options, structured
 
 
+def chain_group(source: str, labels: list[str]) -> tuple[list[str], bool] | None:
+    """An unmarked alternatives chain such as "React or Vue" or "JavaScript/TypeScript".
+
+    Labels joined by commas/slashes/"or" form one chain; "and" ends a chain, so cumulative
+    requirements stay independent. An explicit "or" makes the options clear alternatives
+    (structured). A slash alone does not say either/or, so its options stay unresolved. A
+    plain comma list names several requirements and is not a group.
+    """
+    spans = []
+    for label in dict.fromkeys(labels):
+        span = _mention_span(source, label, 0)
+        if span:
+            spans.append((span, label))
+    spans.sort()
+    chain: list = []
+    for item in spans:
+        if chain:
+            gap = source[chain[-1][0][1] : item[0][0]]
+            if "\n" not in gap and ALTERNATIVE_SEPARATOR.fullmatch(gap):
+                chain.append(item)
+                continue
+            if len(chain) >= 2:
+                break
+            chain = []
+        chain.append(item)
+    if len(chain) < 2:
+        return None
+    gaps = [source[a[0][1] : b[0][0]] for a, b in zip(chain, chain[1:], strict=False)]
+    if any(re.search(r"\bor\b", gap, re.I) for gap in gaps):
+        structured = True
+    elif any("/" in gap for gap in gaps):
+        structured = False
+    else:
+        return None
+    return [label for _, label in chain], structured
+
+
 def experience_scope(text: str) -> str:
     """'technology' when the years qualify a named technology, else 'total'."""
     requirement = parse_requirement(text)
@@ -564,6 +602,8 @@ def experience_scope(text: str) -> str:
         TECHNOLOGY_PATTERN.pattern + r"\s*[:(–-]\s*$", before, re.I
     ):
         return "technology"
+    if scoped_years_text(text, requirement.quote):
+        return "technology"  # years tied to a named skill or area of work, not the career
     return "total"
 
 
@@ -915,7 +955,12 @@ def resolve_job_requirements(
                 for f in response.findings
                 if f.kind == kind and f.job_evidence_id == evidence_id
             ]
-            group = alternative_group(jobs[evidence_id].text, labels) if labels else None
+            group = (
+                alternative_group(jobs[evidence_id].text, labels)
+                or chain_group(jobs[evidence_id].text, labels)
+                if labels
+                else None
+            )
             if group:
                 groups[(kind, evidence_id)] = group
     emitted = set()

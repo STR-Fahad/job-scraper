@@ -1,4 +1,4 @@
-"""Compensation geography versus genuine hiring restrictions (requirements-v3).
+"""Compensation geography versus genuine hiring restrictions (requirements-v4).
 
 Every profile and assessment here is synthetic; nothing is sent to Gemini.
 """
@@ -60,7 +60,7 @@ def test_gitlab_items_are_exactly_the_ones_in_the_failed_run():
 
 
 def test_requirements_version_is_bumped_and_invalidates_the_rule_hash(monkeypatch):
-    assert VERSION == "requirements-v3"
+    assert VERSION == "requirements-v4"
     current = matching._rule_hash(MatchingConfig())
     monkeypatch.setattr(matching, "REQUIREMENT_VERSION", "requirements-v2")
     assert matching._rule_hash(MatchingConfig()) != current
@@ -129,11 +129,17 @@ def classify_items(items, **kinds):
     )
 
 
-def resolve(items, response):
+def resolve(items, response, notes=None):
     profile = CandidateProfile(skills=["Ruby"], experience_years=1.25)
     _, segments = build_segments({"description": ""}, profile.model_dump())
     return resolve_classifications(
-        response, items, segments, None, build_skill_catalog(segments), experience_months=15
+        response,
+        items,
+        segments,
+        None,
+        build_skill_catalog(segments),
+        experience_months=15,
+        notes=notes,
     )
 
 
@@ -168,7 +174,6 @@ def test_salary_item_classified_as_eligibility_is_still_accepted():
         "Candidates must reside in the United States.",
         "Work authorization is required; salary is paid in USD.",
         "The salary range is for US residents and applicants must be a US citizen.",
-        R051,
     ],
 )
 def test_genuine_restriction_discarded_as_nonreq_still_fails(text):
@@ -223,10 +228,25 @@ def test_mocked_gitlab_classification_validates_without_discarding_hiring_condit
     assert "R051" in referenced
 
 
-def test_gitlab_hiring_statement_labelled_nonreq_still_fails():
+def test_gitlab_r051_labelled_nonreq_is_kept_unresolved_with_a_trace():
     items = extract_requirements(GITLAB)
-    error = failure(items, gitlab_response(items, R051="nonreq"))
-    assert (error.reason, error.requirement_id) == ("restriction_discarded", "R051")
+    notes = []
+    findings = resolve(items, gitlab_response(items, R051="nonreq"), notes=notes)
+    assert notes == [
+        {
+            "requirement_id": "R051",
+            "original": ["nonreq"],
+            "normalized": ["unresolved"],
+            "rule": "ambiguous_location_policy",
+            "reason": notes[0]["reason"],
+        }
+    ]
+    kinds = {x["kind"] for x in findings if x.get("job_evidence_id") == "R051"}
+    assert kinds == {"unresolved"}  # never eligibility, never silently discarded
+
+
+def test_gitlab_r028_labelled_nonreq_still_fails():
+    items = extract_requirements(GITLAB)
     error = failure(items, gitlab_response(items, R028="nonreq"))
     assert (error.reason, error.requirement_id) == ("restriction_discarded", "R028")
 
@@ -365,9 +385,9 @@ def test_mixed_salary_and_mandatory_hiring_text_cannot_be_discarded(text):
     assert failure(items, classify_items(items, R002="nonreq")).reason == "restriction_discarded"
 
 
-def test_ambiguous_location_statement_stays_non_discardable_but_may_be_unresolved():
+def test_ambiguous_location_statement_is_never_discardable_text_but_may_be_unresolved():
+    assert not discardable_location_text(R051)
     items = inventory("Experience with Ruby.", R051, "Maintain services.")
-    assert failure(items, classify_items(items, R002="nonreq")).reason == "restriction_discarded"
     resolve(items, classify_items(items, R002="unresolved"))
     assert (
         geography(job(title="Backend Engineer", workplace_type="remote", description=R051)).status

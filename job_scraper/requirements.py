@@ -19,7 +19,7 @@ from .evidence import (
 )
 from .experience import minimum_months, parse_requirement
 
-VERSION = "requirements-v3"
+VERSION = "requirements-v4"
 HEADINGS = {
     "requirements": "requirements",
     "required qualifications": "requirements",
@@ -291,6 +291,70 @@ def extract_requirements(description: str) -> list[RequirementItem]:
     return output
 
 
+# Deterministic normalizations of the model's labels. Each one is limited to wording that
+# clearly justifies it, keeps the model's original label in the saved assessment, and never
+# turns a mandatory hiring condition into anything but a hiring condition.
+AMBIGUOUS_POLICY = re.compile(
+    r"\b(?:some|certain|specific|particular)\s+(?:roles?|positions?|jobs?)\s+"
+    r"(?:may|might|can|could)\s+(?:carry|have|require|include|be subject to)\b"
+    r"[^.]{0,60}\b(?:location|country|region)(?:[- ]based|[- ]specific)?\b"
+    r"[^.]{0,40}\b(?:eligibility|requirements?|restrictions?)\b",
+    re.I,
+)
+GLOBAL_HIRING = re.compile(
+    r"\b(?:hires?|recruits?)\s+(?:new\s+)?(?:team members|people|employees|talent)\s+"
+    r"(?:in|from|across)\s+(?:\w+\s+){0,2}countries\s+around\s+the\s+world\b"
+    r"|^\W*all\s+(?:of\s+our\s+)?roles\s+are\s+remote\b",
+    re.I,
+)
+HELP_WITH_LOCATION = re.compile(
+    r"\b(?:talent acquisition|recruiting|recruitment|hr|people)\s+team\s+can\s+(?:help|answer)\b"
+    r"[^.]{0,60}\blocation\b",
+    re.I,
+)
+# Job-board footer text ("Find more English Speaking Jobs in Germany on Arbeitnow") describes
+# the board's own listing, not a condition set by the employer.
+SOURCE_FOOTER = re.compile(
+    r"^\W*(?:(?:find|search)\s+)?(?:more\s+)?(?:english\s+speaking\s+)?jobs\s+in\s+[^\n]{1,60}\s+"
+    r"on\s+arbeitnow\W*$",
+    re.I,
+)
+
+
+def ambiguous_location_policy(text: str) -> bool:
+    """True when every restriction-like sentence is a vague location policy (or a global
+    hiring or "ask us" sentence) and at least one says roles *may* carry location rules."""
+    vague = False
+    for sentence in _sentences(text):
+        if not restriction_like(sentence):
+            continue
+        if AMBIGUOUS_POLICY.search(sentence):
+            vague = True
+        elif not (GLOBAL_HIRING.search(sentence) or HELP_WITH_LOCATION.search(sentence)):
+            return False
+    return vague
+
+
+def normalize_kinds(item: "RequirementItem", kinds: list[str]):
+    """(new kinds, rule, reason) when the source wording justifies a deterministic change."""
+    if item.heading:
+        return None
+    if kinds == ["nonreq"] and ambiguous_location_policy(item.text):
+        return (
+            ["unresolved"],
+            "ambiguous_location_policy",
+            "The text says some roles may carry location-based requirements; it neither states "
+            "nor rules out a restriction for this job, so it stays unresolved.",
+        )
+    if kinds == ["eligibility"] and SOURCE_FOOTER.fullmatch(item.text.strip()):
+        return (
+            ["nonreq"],
+            "source_site_footer",
+            "Job-board footer text, not an employer hiring condition.",
+        )
+    return None
+
+
 def resolve_classifications(
     response: ClassifiedRequirements,
     inventory: list[RequirementItem],
@@ -299,6 +363,7 @@ def resolve_classifications(
     catalog=None,
     *,
     experience_months: int | None = None,
+    notes: list | None = None,
 ) -> list[dict]:
     by_id = {item.id: item for item in inventory}
     seen = set()
@@ -307,6 +372,19 @@ def resolve_classifications(
         field = f"items[{index}]"
         item = by_id.get(assignment.requirement_id)
         kinds = [part.kind for part in assignment.parts]
+        change = normalize_kinds(item, kinds) if item is not None else None
+        if change:
+            if notes is not None:
+                notes.append(
+                    {
+                        "requirement_id": item.id,
+                        "original": list(kinds),
+                        "normalized": list(change[0]),
+                        "rule": change[1],
+                        "reason": change[2],
+                    }
+                )
+            kinds = list(change[0])
 
         def fail(
             location: str,
@@ -361,22 +439,21 @@ def resolve_classifications(
             and "unresolved" not in kinds
         ):
             raise fail(field, "technical_item_misclassified")
-        for part in assignment.parts:
-            if part.kind in {"req", "pref"}:
+        for kind in kinds:
+            if kind in {"req", "pref"}:
                 labels = list(dict.fromkeys(mention.text for mention in positive)) or [
                     claim_text(item.text)
                 ]
                 findings.extend(
-                    JobFinding(kind=part.kind, text=label, job_evidence_id=item.id)
-                    for label in labels
+                    JobFinding(kind=kind, text=label, job_evidence_id=item.id) for label in labels
                 )
-            elif part.kind in {"exp", "duty", "eligibility", "unresolved"}:
+            elif kind in {"exp", "duty", "eligibility", "unresolved"}:
                 text = claim_text(item.text)
-                if part.kind == "exp":
+                if kind == "exp":
                     requirement = parse_requirement(item.text)
                     if requirement:
                         text = requirement.quote
-                findings.append(JobFinding(kind=part.kind, text=text, job_evidence_id=item.id))
+                findings.append(JobFinding(kind=kind, text=text, job_evidence_id=item.id))
     if seen != set(by_id):
         missing = sorted(set(by_id) - seen)[0]
         raise EvidenceError(

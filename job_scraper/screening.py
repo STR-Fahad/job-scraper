@@ -149,8 +149,68 @@ NON_LOCATION_BASED = re.compile(
 )
 
 
+# Some ATS boards state the hiring geography in the location field itself, for example
+# "Home based - Worldwide" or "Home Based - APAC; Home based - EMEA" (Canonical on Greenhouse).
+HOME_BASED = re.compile(r"\b(?:home|remote)[ -]?based\s*[-–:]\s*([^;|]+)", re.I)
+# "Remote, Global" / "Remote - Australia" (Ashby, Greenhouse): the label counts only when it is a
+# known region or country, so "Remote - Hybrid" or "Remote, flexible hours" state nothing.
+REMOTE_REGION = re.compile(r"\bremote\s*(?:,|[-–])\s*([^;|,]+)", re.I)
+REGION_STATE = {
+    "worldwide": "ELIGIBLE",
+    "global": "ELIGIBLE",
+    "anywhere": "ELIGIBLE",
+    "amer": "INELIGIBLE",
+    "namer": "INELIGIBLE",
+    "emea": "INELIGIBLE",
+    "europe": "INELIGIBLE",
+    "americas": "INELIGIBLE",
+    "north america": "INELIGIBLE",
+    "latam": "INELIGIBLE",
+    "latin america": "INELIGIBLE",
+    "south america": "INELIGIBLE",
+    "africa": "INELIGIBLE",
+    "middle east": "INELIGIBLE",
+    # APAC and Asia are named regions that may or may not include Pakistan: unresolved.
+    "apac": "UNVERIFIED",
+    "asia": "UNVERIFIED",
+    "asia pacific": "UNVERIFIED",
+}
+
+
+def home_based_regions(job) -> list[str]:
+    found = [m[1].strip(" .") for value in job.location for m in HOME_BASED.finditer(value)]
+    for value in job.location:
+        for m in REMOTE_REGION.finditer(value):
+            label = m[1].strip(" .")
+            if label.casefold() in REGION_STATE or territory(label) != "UNVERIFIED":
+                found.append(label)
+    return found
+
+
+def region_state(label: str) -> str:
+    return REGION_STATE.get(label.casefold().strip()) or territory(label)
+
+
+def provider_location_state(regions: list[str]) -> str:
+    """Alternatives, like a provider territory list: any open region opens the job."""
+    states = [region_state(label) for label in regions]
+    if "ELIGIBLE" in states:
+        return "ELIGIBLE"
+    return "INELIGIBLE" if states and set(states) == {"INELIGIBLE"} else "UNVERIFIED"
+
+
 def geography(job):
     territorial, schedules = [], []
+    regions = home_based_regions(job)
+    if regions:
+        territorial.append(
+            finding(
+                provider_location_state(regions),
+                json.dumps(job.location, ensure_ascii=False),
+                "provider_location",
+                "location",
+            )
+        )
     for key in ("locationRestrictions", "candidate_required_location"):
         value = job.restrictions.get(key)
         if value:
@@ -177,7 +237,7 @@ def geography(job):
                 state = "UNVERIFIED"
         else:
             patterns = [
-                r"^(?:(?:you|candidates|applicants) (?:can |may |will )?)?work (?:remotely )?from (.+)",
+                r"^(?:(?:you|candidates|applicants) (?:can |may |will )?)?work (?:remotely )?from (?!home\b)(.+)",
                 r"\b(?:must (?:be (?:based|located)|reside|live)|(?:only|exclusively) (?:based|located)) in (.+)",
                 r"\b(?:open to|accepting) (?:candidates|applicants|people) (?:based |located )?(?:in|from) (.+)",
                 r"\bwe (?:can |do )?hire (?:candidates )?(?:in|from) (.+)",
@@ -203,7 +263,10 @@ def geography(job):
                     state = "ELIGIBLE"
         if state:
             territorial.append(finding(state, clause, "explicit_geography"))
-        if re.search(r"\b(?:time[ -]?zone|overlap|working hours|business hours)\b", clause, re.I):
+        # "remote roles in every time zone" states that there is no time-zone limit.
+        if re.search(
+            r"\b(?:time[ -]?zone|overlap|working hours|business hours)\b", clause, re.I
+        ) and not re.search(r"\b(?:every|any|all)\s+time[ -]?zones?\b", clause, re.I):
             schedules.append(finding("UNVERIFIED", clause, "schedule_review"))
     if job.workplace_type in {"onsite", "hybrid"} and job.location:
         codes = [location_country(v) for v in job.location]
@@ -246,7 +309,7 @@ _NUMBER = r"(?:\d+(?:\.\d+)?|\b(?:" + "|".join(NUMBER_WORDS) + r")\b)"
 YEARS = re.compile(
     r"(?:[\[(]\s*)?(?P<low>" + _NUMBER + r")(?:\s*\(\d+\))?"
     r"\s*(?:(?:-|–|to)\s*(?P<high>" + _NUMBER + r"))?"
-    r"\s*\+?\s*[\])]?\s*(?:or more\s+)?(?P<unit>years?|months?)(?:['’])?\b",
+    r"(?:\s*\+|\s+plus\b)?\s*[\])]?\s*(?:or more\s+)?(?P<unit>years?|yrs?|months?)(?:['’])?\b",
     re.I,
 )
 # Durations that are not experience minimums; applied to the word and bracket forms.
@@ -282,8 +345,12 @@ def number(value):
 
 
 CONTEXT = re.compile(
-    r"\b(?:experience|engineering|development|python|java|ruby|rails|react|software|programming|sales|recruiting|leadership|management)\b",
+    r"\b(?:experience|engineering|development|python|java|ruby|rails|react|software|programming|sales|recruiting|leadership|management|front-?end|back-?end|coding|full[- ]?stack)\b",
     re.I,
+)
+# A bare "6+ years" under a heading such as "Experience:" has no context word of its own.
+EXPERIENCE_LABEL = re.compile(
+    r"\b(?:experience|background|qualifications|skills)\b[^.!?]{0,30}:?\s*$", re.I
 )
 
 
@@ -299,7 +366,9 @@ def experience(job):
             re.I,
         )
     ]
-    for clause in clauses(job.description):
+    statements = clauses(job.description)
+    for position, clause in enumerate(statements):
+        previous = statements[position - 1] if position else ""
         if re.fullmatch(
             r"(?:preferred (?:qualifications|skills)|nice[- ]to[- ]haves?|bonus(?: points| skills| qualifications)?|desirable(?: skills)?)[\s:]*",
             clause,
@@ -315,7 +384,7 @@ def experience(job):
             optional_section = False
             continue
         if clause in credits or re.search(
-            r"\b(?:our (?:company|team|founder|CEO|CTO)|company has|we have|combined experience)\b",
+            r"\b(?:our (?:company|team|founder|CEO|CTO)|company has|we have|we['’]ve been|combined experience)\b",
             clause,
             re.I,
         ):
@@ -329,7 +398,13 @@ def experience(job):
         parts = re.split(r",\s*(?=(?:ideally|preferably|prefer(?:red|ably))\b)", clause, flags=re.I)
         for part in parts:
             matches = list(YEARS.finditer(part))
-            if not matches or not (CONTEXT.search(part) or ROLE_CONTEXT.search(part)):
+            labelled = (
+                len(part) <= 45
+                and len(previous) <= 60
+                and re.match(r"^\W*[\[(]?\d", part)
+                and EXPERIENCE_LABEL.search(previous)
+            )
+            if not matches or not (CONTEXT.search(part) or ROLE_CONTEXT.search(part) or labelled):
                 continue
             alternatives = any(
                 re.search(
@@ -341,14 +416,14 @@ def experience(job):
             )
             for match in matches:
                 extended = not match["low"][0].isdigit() or match[0][0] in "[("
-                if extended and (
-                    NOT_EXPERIENCE.search(part[max(0, match.start() - 30) : match.end() + 30])
-                    or RECENCY_WINDOW.search(part[: match.start()])
-                    or (
-                        match["unit"].lower().startswith("month")
-                        and not re.search(r"\bexperience\b", part, re.I)
+                in_months = match["unit"].lower().startswith("month")
+                if (
+                    extended
+                    and (
+                        NOT_EXPERIENCE.search(part[max(0, match.start() - 30) : match.end() + 30])
+                        or (in_months and not re.search(r"\bexperience\b", part, re.I))
                     )
-                ):
+                ) or ((extended or in_months) and RECENCY_WINDOW.search(part[: match.start()])):
                     continue
                 scale = 12 if match["unit"].lower().startswith("month") else 1
                 low = number(match["low"]) / scale
@@ -462,6 +537,36 @@ def relevance(job):
     )
 
 
+STUDENT_TITLE = re.compile(
+    r"\b(?:working\s+student|werkstudent(?:in)?(?:\*in)?|pflichtpraktikum|pflichtpraktikant(?:in)?)\b",
+    re.I,
+)
+STUDENT_ENROLLED = re.compile(
+    r"\b(?:(?:must|need to|should)\s+be\s+(?:a\s+)?(?:currently\s+|actively\s+)?(?:enrolled|registered)\b"
+    r"|(?:currently|actively)\s+enrolled\s+(?:full[- ]time\s+|part[- ]time\s+)?(?:in|at)\b"
+    r"|enrolled\s+(?:full[- ]time\s+)?(?:in|at)\s+(?:a|an|the)?\s*(?:accredited\s+|top\s+)?"
+    r"(?:university|college|school|institution|bachelor|master|msc|bsc|degree|programme|program)"
+    r"|enrol?lment\s+(?:for the whole duration|throughout|during)\b[^.]{0,60}\b(?:msc|bsc|master|bachelor|degree|university)"
+    r"|immatrikuliert|eingeschrieben)",
+    re.I,
+)
+
+
+def student_only(job):
+    """Roles open only to enrolled students. The approved candidate is a graduate."""
+    found = []
+    if STUDENT_TITLE.search(job.title):
+        found.append(finding("INELIGIBLE", job.title, "student_enrollment_required", "title"))
+    for clause in clauses(job.description):
+        if STUDENT_ENROLLED.search(clause) and not re.search(
+            r"\b(?:not|no)\s+(?:need|required|necessary)\b|\bor\s+(?:recent(?:ly)?\s+)?graduat\w*|\brecent(?:ly)?\s+(?:fresh\s+)?graduat\w*|\bfresh\s+graduates?\b",
+            clause,
+            re.I,
+        ):
+            found.append(finding("INELIGIBLE", clause, "student_enrollment_required"))
+    return found
+
+
 def employment(job):
     groups = {
         "citizenship": [],
@@ -529,10 +634,13 @@ def employment(job):
                 groups[name].append(
                     finding("ELIGIBLE" if waiver else "UNVERIFIED", clause, f"{name}_review", field)
                 )
+    students = student_only(job)
     # Explicit complementary facts can resolve eligibility without a magic
     # phrase: permitted Pakistan engagement, citizenship neutrality and no foreign
     # authorization requirement. A mere geographic invitation cannot do this.
     independent = [agree(values, f"{name} evidence") for name, values in groups.items() if values]
+    if students:
+        independent.append(agree(students, "Current student status is required"))
     if blanket:
         independent.append(agree(blanket, "Explicit general employment permission"))
     else:
@@ -575,6 +683,14 @@ OFFICE_REQUIRED = re.compile(
     r"(?:the\s+|our\s+)?office\b",
     re.I,
 )
+CONDITIONAL_OFFICE = re.compile(
+    r"^\W*(?:if\b|where\b|depending on\b|"
+    r"for\s+(?:candidates|those|employees|people|team members|applicants|colleagues)\s+"
+    r"(?:who\s+are\s+)?(?:based|located|living|residing)\b|"
+    r"(?:employees|candidates|those|people|team members)\s+(?:who\s+are\s+)?"
+    r"(?:based|located|living)\s+(?:in|near)\b)",
+    re.I,
+)
 OFFICE_OPTIONAL = re.compile(
     r"\b(?:no|without|optional|voluntary)\b.{0,45}\b(?:office|on[- ]site|in[- ]office)\b"
     r"|\b(?:office|on[- ]site|in[- ]office)\b.{0,45}"
@@ -594,12 +710,27 @@ def workplace(job):
         "normalized_workplace",
         "workplace_type",
     )
+    if job.workplace_type == "unknown" and home_based_regions(job):
+        provider = finding(
+            "ELIGIBLE",
+            json.dumps(job.location, ensure_ascii=False),
+            "home_based_location",
+            "location",
+        )
     statements = clauses(job.description)
-    mandatory = [
-        finding("INELIGIBLE", clause, "mandatory_office_attendance")
+    required = [
+        clause
         for clause in statements
         if OFFICE_REQUIRED.search(clause) and not OFFICE_OPTIONAL.search(clause)
     ]
+    # "If the posting is onsite…" and "For candidates based in London…" state a rule for a
+    # case that may not be this job or this candidate, so they cannot exclude the job.
+    conditional = [c for c in required if CONDITIONAL_OFFICE.match(c)]
+    mandatory = [
+        finding("INELIGIBLE", clause, "mandatory_office_attendance")
+        for clause in required
+        if clause not in conditional
+    ] + [finding("UNVERIFIED", clause, "conditional_office_attendance") for clause in conditional]
     waived = [
         finding("ELIGIBLE", clause, "office_attendance_waived")
         for clause in statements

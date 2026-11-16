@@ -9,14 +9,25 @@ import re
 from dataclasses import dataclass, replace
 from decimal import Decimal, InvalidOperation
 
-NUMBER = r"\d+(?:\.\d+)?"
+from .screening import NUMBER_WORDS
+
+# Number words are shared with Module 2 (`screening.NUMBER_WORDS`), so both read the same wording.
+NUMBER = r"(?:\d+(?:\.\d+)?|\b(?:" + "|".join(NUMBER_WORDS) + r")\b)"
 UNIT = r"(?P<unit>years?|yrs?|months?|mths?)"
+PLUS = r"(?:\s*\+|\s+plus\b)?"
 COMPOSITE = re.compile(
     r"\b(?P<years>\d+)\s*(?:years?|yrs?)\s*(?:and\s*|,\s*)?(?P<months>\d+)\s*(?:months?|mths?)\b",
     re.I,
 )
-RANGE = re.compile(rf"\b(?P<low>{NUMBER})\s*(?:-|–|to)\s*(?P<high>{NUMBER})\s*\+?\s*{UNIT}\b", re.I)
-SINGLE = re.compile(rf"\b(?P<low>{NUMBER})\s*\+?\s*{UNIT}\b", re.I)
+RANGE = re.compile(
+    rf"[\[(]?\s*\b(?P<low>{NUMBER})\s*(?:-|–|to)\s*(?P<high>{NUMBER}){PLUS}\s*[\])]?\s*"
+    rf"(?:or more\s+)?{UNIT}\b",
+    re.I,
+)
+SINGLE = re.compile(
+    rf"[\[(]?\s*\b(?P<low>{NUMBER})(?:\s*\(\d+\))?{PLUS}\s*[\])]?\s*(?:or more\s+)?{UNIT}\b",
+    re.I,
+)
 # Months name many things besides experience (a 6 month contract, a 3 month probation), so a
 # month quantity counts as an experience requirement only with experience wording nearby.
 EXPERIENCE_WORDS = re.compile(
@@ -30,6 +41,18 @@ FOLLOWS_AWAY = re.compile(
     r"warranty|onboarding|period|term)\b",
     re.I,
 )
+# Durations that describe something other than the candidate's experience (any unit).
+UNRELATED_AFTER = re.compile(
+    r"^\W*(?:\w+\W+){0,3}?(?:sales\s+cycles?|customer\s+relationships?|company\s+history|"
+    r"product\s+(?:age|history)|ago|old)\b",
+    re.I,
+)
+# A duration the employer promises ("a 10 year enterprise security commitment", "up to 15 years of
+# security and maintenance commitments for LTS releases") is not a candidate requirement.
+COMMITMENT_AFTER = re.compile(
+    r"^\W*(?:of\W+)?(?:\w+\W+){0,5}?(?:commitments?|guarantees?|support\s+(?:window|lifecycle|period))\b",
+    re.I,
+)
 MAXIMUM = re.compile(r"\b(?:at most|up to|maximum(?: of)?|no more than|under|less than)\s*$", re.I)
 PREFERRED = re.compile(
     r"\b(?:preferred|nice[- ]to[- ]have|desirable|bonus|ideally|a plus|not required|optional)\b",
@@ -39,6 +62,12 @@ AMBIGUOUS = re.compile(r"\b(?:or equivalent|alternatively|unless|or\s+\d)\b", re
 LEADING_PREFERENCE = re.compile(
     r"^\W*(?:ideally|preferably|preferred|nice[- ]to[- ]have|bonus|desirable)\b", re.I
 )
+
+
+def _amount(value: str) -> str:
+    """Digits stay as written; a number word becomes its digits."""
+    word = value.strip().casefold()
+    return str(NUMBER_WORDS[word]) if word in NUMBER_WORDS else value
 
 
 def _boundary(text: str, position: int, side: str, marks: str) -> int:
@@ -119,14 +148,19 @@ def parse_requirement(text: str) -> Requirement | None:
     for pattern in (RANGE, SINGLE):
         for hit in pattern.finditer(text):
             unit = hit["unit"].lower()
-            if unit.startswith(("month", "mth")) and (
-                not EXPERIENCE_WORDS.search(text)
-                or LEADS_AWAY.search(text[: hit.start()])
-                or FOLLOWS_AWAY.search(text[hit.end() :])
+            after, before = text[hit.end() :], text[: hit.start("low")]
+            if UNRELATED_AFTER.search(after) or COMMITMENT_AFTER.search(after):
+                continue
+            # Word and bracket forms ("five years", "[3+] years") need experience wording and
+            # no time-frame wording, like month quantities; plain digit years keep their rule.
+            extended = not hit["low"][0].isdigit() or hit.group().lstrip().startswith(("[", "("))
+            away = LEADS_AWAY.search(before) or FOLLOWS_AWAY.search(after)
+            if (unit.startswith(("month", "mth")) or extended) and (
+                not EXPERIENCE_WORDS.search(text) or away
             ):
                 continue
-            low, exact = _to_months(hit["low"], unit)
-            high = _to_months(hit["high"], unit)[0] if "high" in hit.groupdict() else None
+            low, exact = _to_months(_amount(hit["low"]), unit)
+            high = _to_months(_amount(hit["high"]), unit)[0] if "high" in hit.groupdict() else None
             candidates.append((hit.start(), low, exact, hit, high))
     if not candidates:
         return None
@@ -148,7 +182,7 @@ def parse_requirement(text: str) -> Requirement | None:
         kind = "range"
     else:
         kind = "minimum"
-    return Requirement(months, exact, kind, high if kind == "range" else None, hit.group())
+    return Requirement(months, exact, kind, high if kind == "range" else None, hit.group().strip())
 
 
 def minimum_months(text: str) -> int | None:
@@ -184,3 +218,39 @@ def requirement_in_context(quote: str, source: str) -> Requirement | None:
     if in_context and in_context.quote.strip() == quote.strip():
         return in_context
     return parse_requirement(quote)
+
+
+# Years attached to one skill or one area of work are not total experience: "Strong Haskell
+# skills with at least 3 years" or "3+ years of experience building and operating cloud
+# infrastructure". They are scoped to that skill or area and never decide on their own.
+_GENERIC_SKILL = (
+    r"software|engineering|programming|technical|coding|development|problem|communication|"
+    r"interpersonal|leadership|management|professional"
+)
+SKILL_BEFORE = re.compile(
+    rf"\b(?!(?:{_GENERIC_SKILL})\b)[\w+#.-]+\s+(?:skills?|expertise|proficiency|knowledge)"
+    r"\s+(?:with|of)?\s*(?:at least|over|more than)?\s*$",
+    re.I,
+)
+DOMAIN_AFTER = re.compile(
+    r"^\s*of\s+(?:[\w-]+\s+){0,2}?experience\s+(?:in|with|building|operating|developing|"
+    r"designing|working|using|managing|running|deploying|maintaining|leading)\b"
+    r"(?P<rest>[^.;\n]{0,80})",
+    re.I,
+)
+GENERIC_OBJECT = re.compile(
+    r"\b(?:software|web|full.?stack|front.?end|back.?end|applications?|products?|production|"
+    r"engineering|development)\b",
+    re.I,
+)
+
+
+def scoped_years_text(excerpt: str, quote: str) -> bool:
+    """True when the years in `quote` qualify a named skill or an area of work."""
+    position = excerpt.find(quote) if quote else -1
+    if position < 0:
+        return False
+    if SKILL_BEFORE.search(excerpt[max(0, position - 60) : position]):
+        return True
+    after = DOMAIN_AFTER.match(excerpt[position + len(quote) : position + len(quote) + 140])
+    return bool(after and not GENERIC_OBJECT.search(after["rest"][:60]))

@@ -28,6 +28,21 @@ source = "arbeitnow"
 max_pages = 100
 interval_seconds = 2
 
+# Verified 2026-11-04 via `discover` (public Greenhouse board API, no authentication). Its jobs state
+# the hiring region in the location field ("Home based - Worldwide", "Home Based - APAC"), which
+# Module 2 reads. Collecting it fetches every posting, so a run takes about ten minutes.
+[[sources]]
+source = "greenhouse"
+board = "canonical"
+company = "Canonical"
+
+# Verified 2026-11-04 via `discover` (public Ashby posting API, no authentication). 69 postings, many
+# labelled "Remote, Global"; Module 2 reads those location labels.
+[[sources]]
+source = "ashby"
+board = "supabase"
+company = "Supabase"
+
 # Verified public example boards (2026-10-25); enable only employers you want.
 # Copy a block, use discovery, or enable via the sources command.
 [[sources]]
