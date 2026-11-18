@@ -238,6 +238,20 @@ DOMAIN_AFTER = re.compile(
     r"(?P<rest>[^.;\n]{0,80})",
     re.I,
 )
+# "3+ years in SRE, platform or infrastructure roles": the years belong to a named specialist area,
+# not to total experience. Only a recognized specialist area counts, and any generic software
+# wording in the same phrase ("in software engineering roles") keeps it a total-experience minimum.
+AREA_AFTER = re.compile(
+    r"^\s*(?:of\s+(?:[\w-]+\s+){0,2}?experience\s+)?in\s+(?:an?\s+|the\s+)?"
+    r"(?P<rest>[^.;\n]{0,80})",
+    re.I,
+)
+SPECIALIST_AREA = re.compile(
+    r"\b(?:sre|site reliability|devops|platform|infrastructure|security|network(?:ing)?|"
+    r"data|analytics|machine learning|embedded|firmware|mobile|ios|android|cloud|qa|"
+    r"quality assurance|support|sales|consulting|marketing|product management)\b",
+    re.I,
+)
 GENERIC_OBJECT = re.compile(
     r"\b(?:software|web|full.?stack|front.?end|back.?end|applications?|products?|production|"
     r"engineering|development)\b",
@@ -252,5 +266,13 @@ def scoped_years_text(excerpt: str, quote: str) -> bool:
         return False
     if SKILL_BEFORE.search(excerpt[max(0, position - 60) : position]):
         return True
-    after = DOMAIN_AFTER.match(excerpt[position + len(quote) : position + len(quote) + 140])
-    return bool(after and not GENERIC_OBJECT.search(after["rest"][:60]))
+    tail = excerpt[position + len(quote) : position + len(quote) + 140]
+    after = DOMAIN_AFTER.match(tail)
+    if after and not GENERIC_OBJECT.search(after["rest"][:60]):
+        return True
+    area = AREA_AFTER.match(tail)
+    return bool(
+        area
+        and SPECIALIST_AREA.search(area["rest"][:60])
+        and not GENERIC_OBJECT.search(area["rest"][:60])
+    )

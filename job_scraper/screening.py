@@ -155,6 +155,10 @@ HOME_BASED = re.compile(r"\b(?:home|remote)[ -]?based\s*[-–:]\s*([^;|]+)", re.
 # "Remote, Global" / "Remote - Australia" (Ashby, Greenhouse): the label counts only when it is a
 # known region or country, so "Remote - Hybrid" or "Remote, flexible hours" state nothing.
 REMOTE_REGION = re.compile(r"\bremote\s*(?:,|[-–])\s*([^;|,]+)", re.I)
+# "Remote in EU, Europe, North America" (a list of regions after "in"): used only when every label
+# in the list is a known region or country, so vague text such as "Remote in the office" states
+# nothing.
+REMOTE_IN_LIST = re.compile(r"\bremote(?:ly)?\s+in\s+([^;|]+)", re.I)
 REGION_STATE = {
     "worldwide": "ELIGIBLE",
     "global": "ELIGIBLE",
@@ -163,6 +167,8 @@ REGION_STATE = {
     "namer": "INELIGIBLE",
     "emea": "INELIGIBLE",
     "europe": "INELIGIBLE",
+    "eu": "INELIGIBLE",
+    "european union": "INELIGIBLE",
     "americas": "INELIGIBLE",
     "north america": "INELIGIBLE",
     "latam": "INELIGIBLE",
@@ -184,6 +190,13 @@ def home_based_regions(job) -> list[str]:
             label = m[1].strip(" .")
             if label.casefold() in REGION_STATE or territory(label) != "UNVERIFIED":
                 found.append(label)
+        for m in REMOTE_IN_LIST.finditer(value):
+            labels = [x.strip(" .") for x in re.split(r",|\band\b|\bor\b|/", m[1]) if x.strip(" .")]
+            if labels and all(
+                label.casefold() in REGION_STATE or territory(label) != "UNVERIFIED"
+                for label in labels
+            ):
+                found.extend(labels)
     return found
 
 

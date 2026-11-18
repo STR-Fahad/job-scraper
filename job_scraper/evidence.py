@@ -1155,6 +1155,10 @@ def resolve_job_requirements(
         if heading in {"requirements", "required qualifications", "minimum qualifications"}:
             in_requirements = True
             continue
+        # A bare "Qualifications" line inside a requirement list is a sub-heading, not an item
+        # to be covered; it keeps the list open.
+        if in_requirements and heading in {"qualifications", "your qualifications"}:
+            continue
         # A following section heading ends the explicit requirement list; the
         # heading itself is never a requirement line.
         if heading in {

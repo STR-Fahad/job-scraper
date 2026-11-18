@@ -210,6 +210,40 @@ def test_transferable_duty_is_partial_without_direct_skill_claim():
     assert result[1]["skill_support_level"] == "transferable"
 
 
+def test_qualifications_subheading_in_requirements_is_not_an_item():
+    profile = CandidateProfile(experience_years=1.25)
+    jobs, people = build_segments(
+        {
+            "description": (
+                "Requirements\nQualifications:\nBachelor's in CS.\nPython\nBenefits\nWe offer pay."
+            )
+        },
+        profile.model_dump(),
+    )
+    ids = {x.text: x.id for x in jobs if x.field.startswith("description")}
+    response = JobResponse.model_validate(
+        {
+            "findings": [
+                {"kind": "req", "text": "Python", "job_evidence_id": ids["Python"]},
+                {
+                    "kind": "req",
+                    "text": "Bachelor's in CS",
+                    "job_evidence_id": ids["Bachelor's in CS."],
+                },
+                {"kind": "duty", "text": "We offer pay", "job_evidence_id": ids["We offer pay."]},
+            ]
+        }
+    )
+    # The "Qualifications:" line itself needs no finding; before the fix this raised
+    # missing_explicit_requirement_segment.
+    assert resolve_job_requirements(response, jobs, people, 1.25)
+    missing = JobResponse.model_validate(
+        {"findings": [x for x in response.model_dump()["findings"] if x["text"] != "Python"]}
+    )
+    with pytest.raises(EvidenceError, match="missing_explicit_requirement_segment"):
+        resolve_job_requirements(missing, jobs, people, 1.25)
+
+
 def test_explicit_requirement_section_must_be_covered():
     profile = CandidateProfile(experience_years=1.25)
     jobs, people = build_segments(

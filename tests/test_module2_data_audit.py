@@ -229,6 +229,13 @@ def test_worldwide_location_alone_never_makes_the_whole_job_eligible():
         (["Remote - Hybrid"], "UNVERIFIED"),
         (["Remote, flexible hours"], "UNVERIFIED"),
         (["Remote"], "UNVERIFIED"),
+        # a list of regions after "in" counts only when every label is a known region or country
+        (["Remote in EU, Europe, North America"], "INELIGIBLE"),
+        (["Remote in Germany"], "INELIGIBLE"),
+        (["Remote in EU, Pakistan"], "ELIGIBLE"),
+        (["Remote in Europe and Asia"], "UNVERIFIED"),
+        (["Remote in the office"], "UNVERIFIED"),
+        (["Remote in Europe, somewhere else"], "UNVERIFIED"),
     ],
 )
 def test_remote_region_location_text(location, geo):

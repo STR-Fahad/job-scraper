@@ -854,3 +854,20 @@ def test_employer_commitments_are_not_candidate_experience_minimums():
     assert parse_requirement("5+ years of experience").minimum_months == 60
     assert parse_requirement("5 years of security experience").minimum_months == 60
     assert parse_requirement("3+ years of experience building and operating cloud infrastructure")
+
+
+def test_years_tied_to_a_named_specialist_area_are_scoped_not_total():
+    from job_scraper.experience import scoped_years_text
+
+    def scoped(line: str) -> bool:
+        return scoped_years_text(line, line.split(" in ")[0])
+
+    # a named specialist area: the years belong to that area
+    assert scoped("3+ years in SRE, platform or infrastructure roles")
+    assert scoped("3+ years of experience in security")
+    # generic software wording, or no recognized area, stays a total-experience minimum
+    assert not scoped("3+ years in software engineering roles")
+    assert not scoped("3+ years in a software engineering role")
+    assert not scoped("2+ years in development")
+    assert not scoped("5 years in data engineering")
+    assert not scoped("3+ years in total")
