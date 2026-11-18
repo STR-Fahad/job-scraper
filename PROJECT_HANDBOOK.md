@@ -6,6 +6,13 @@ This is a single-user Windows/Python application in `C:\job scraper`; Git remote
 
 **Trust order:** current source and tests → current config and read-only database metadata → recent executed logs → historical reports/plans. An older report can describe a former architecture. Verify behavior against code. Keep changes to the user's next bounded task; run relevant and full checks; report observed results and limitations. Never infer permission for a new paid LLM call from an earlier authorization.
 
+### Working rules added 2026-11-18
+
+- **Judging lives in a separate session.** The main chat plans and changes the project; job verdicts (`match judge-export`, writing the verdict, `match judge-import`) are written and saved in a separate judge session. Only one session writes to a database at a time.
+- **Calibration database.** `data/calibration/calibration.sqlite3` (config `data/calibration/config.toml`, git-ignored) holds jobs imported by hand for calibration; always pass `--config data/calibration/config.toml` to keep it apart from `data/jobs.sqlite3`. It holds a copy of the approved profile v3.
+- **Module 2 version label.** Changing `processing.VERSION` makes every saved Module 3 verdict stale (the verdict cache key includes the screening version). Bump it only together with a planned re-import of the saved verdict files; commit `b102413` deliberately did not.
+- **Your sheet's colours.** In the user's Google Sheet, jobs tab: green = applied, red = not hiring; Applied tab: red = rejected; the Not hiring tab lists remote companies with no applicable job at that time and is not a blocklist.
+
 ### Quick orientation
 
 | Area | Current state | Primary code |

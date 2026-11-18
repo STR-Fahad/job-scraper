@@ -2,6 +2,18 @@
 
 **Observed 2026-11-01 (Asia/Karachi); updated through Module 4 on 2026-11-04.** Recheck before acting; this is a snapshot, not a permanent count. See `PROJECT_HANDBOOK.md` for the architecture and rules.
 
+## 2026-11-18 — Calibration fixes `b102413` and more judging (committed 2026-11-18)
+
+| Item | Result |
+|---|---|
+| Commit | `b102413` MODULE_2_3_CALIBRATION_FIXES on `main` (6 files: `evidence.py`, `experience.py`, `screening.py` and three test files). Tag `module-2-3-calibration-fixes` |
+| Fixes | (1) `evidence.py`: a bare "Qualifications" line inside a requirements list is a sub-heading, so postings with "Requirements / Qualifications:" no longer fail `judge-import` with `missing_explicit_requirement_segment`. (2) `screening.py` (Module 2): "Remote in EU, Europe, North America" style lists count as a region restriction when every label is a known region or country; "EU" and "European Union" are known regions. (3) `experience.py`: years tied to a named specialist area ("3+ years in SRE, platform or infrastructure roles") are scoped, not total-experience minimums; generic software wording stays a total minimum |
+| Version note | The Module 2 rules version stays `pakistan-0-3-v3.9` on purpose. A first attempt to bump it to v3.10 made all 324 saved verdicts stale (the verdict cache key includes the screening version), so it was reverted and Module 2 re-run; verdicts are current again. Consequence: job 3576 ("Remote in Germany") is now Module 2 INELIGIBLE under the v3.9 label. The clean fix is a version bump plus re-import of the saved verdict files, ideally together with the next Module 2 change |
+| Verification | Full suite **885 passed** (8 new tests); Ruff check and format, `pip check`, `git diff --check` clean; main database `integrity_check` ok, 0 foreign-key violations, 5,250 jobs; verified backup `data/backups/jobs-pre-module2-v3.10-20261118-110614.sqlite3` (git-ignored) |
+| Judging this session | Judging moved to a rule: it happens in a separate judge session, never in the main chat. In this session 86 more jobs were judged (324 total, 797 plan jobs left, 22 logged skipped). Final tags now Eligible 12 / Ineligible 235 / Unverified 77; none of the new jobs became Eligible |
+| Calibration | The user's Google Sheet "Remote Jobs" (jobs tab: green applied, red not hiring; Applied tab: red rejected; Not hiring tab: remote companies with no applicable job at the time, not a blocklist) was compared with the database. Only Canonical, ElevenLabs, Supabase and GitLab overlap. 12 of 27 applied postings were readable and were run through a **separate calibration database** (`data/calibration/calibration.sqlite3`, config `data/calibration/config.toml`, import script `data/calibration/import_postings.py`; all git-ignored under `data/`). Result: the tool tags the user's kind of job (junior full-stack, Python, data) Eligible (5 of 9 judged); weak points were the region text in a header (fix 2), area-scoped years (fix 3) and the heading bug (fix 1) |
+| Known limits | 15 of 27 applied postings were unreadable (LinkedIn login, expired links), including 6 of 7 rejections, so tag versus outcome could not be compared; the calibration set is too small for an error rate. Calibration jobs are imported as source `remotive`, board `calibration` only because the tool accepts six sources; the label exists only in the calibration database. Module 2 for those jobs only reads the text given |
+
 ## 2026-11-16 — Commits for the work since Module 4 (code and tests committed; documentation follows)
 
 | Item | Result |
