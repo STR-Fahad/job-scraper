@@ -2,6 +2,16 @@
 
 **Observed 2026-11-01 (Asia/Karachi); updated through Module 4 on 2026-11-04.** Recheck before acting; this is a snapshot, not a permanent count. See `PROJECT_HANDBOOK.md` for the architecture and rules.
 
+## 2026-11-20 — Reasons and a note on Good fit / Not for me (commit `aa26edc`)
+
+| Item | Result |
+|---|---|
+| Commit | `aa26edc` DASHBOARD_FIT_REASONS_AND_NOTE on `main` (`feedback.py`, the dashboard `app.py`, `focus.py`, `render.py`, `tests/test_feedback.py`; documentation follows) |
+| Behavior | An opened job card has a "Your answer (optional reason)" form: tick one or more reasons (too senior, location or timezone, language, not my stack, not a software role, on-site or hybrid, company or pay, other), add an optional note (300 characters) and press Good fit or Not for me; the quick buttons still answer without a reason. The card shows the reasons and note and keeps the boxes ticked. The Calibration page and `feedback report` add a "Why you said Not for me" table split by the tool's tag at the time |
+| Storage | `fit_feedback` has a `reasons` column (comma-separated keys in a fixed order, validated); an earlier table without it is migrated by `ALTER TABLE` after a verified backup. The table is still not created in the real database (no answers yet). A pick never changes a tag |
+| Verification | Full suite **927 passed** (3 new); Ruff check and format, `pip check` and `git diff --check` clean; checked in the running dashboard (To review tab, opened card form) |
+| Known limits | No answers exist yet, so the report is empty; an error rate needs about 50 answers. The dashboard must be restarted after code changes (a stale process kept old code once) |
+
 ## 2026-11-20 — Aggregators, blocker overrides and Good fit / Not for me (commit `bc38242`)
 
 | Item | Result |
