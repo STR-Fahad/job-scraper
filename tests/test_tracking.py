@@ -1,4 +1,5 @@
 import sqlite3
+from contextlib import closing
 from datetime import UTC, datetime
 
 import pytest
@@ -39,7 +40,7 @@ def test_schema_is_additive_repeatable_and_backed_up(tmp_path):
         assert tracking.save_job(store, job_id, NOW)["created"] is True
     backups = list((tmp_path / "backups").glob("jobs-pre-tracking-*.sqlite3"))
     assert len(backups) == 1
-    with sqlite3.connect(backups[0]) as old:
+    with closing(sqlite3.connect(backups[0])) as old:
         assert old.execute("SELECT count(*) FROM jobs").fetchone()[0] == 1
         assert not tracking.has_schema(old)
 

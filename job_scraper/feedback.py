@@ -8,6 +8,7 @@ current pick; `cleared` withdraws a pick. Rows cannot be updated or deleted.
 """
 
 import sqlite3
+from contextlib import closing
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -46,7 +47,7 @@ def _backup(store, label: str) -> None:
     folder.mkdir(exist_ok=True)
     stamp = f"{datetime.now(UTC):%Y%m%dT%H%M%S%fZ}"
     backup = folder / f"{Path(path).stem}-{label}-{stamp}.sqlite3"
-    with sqlite3.connect(backup) as target:
+    with closing(sqlite3.connect(backup)) as target:
         store.db.backup(target)
         if target.execute("PRAGMA integrity_check").fetchone()[0] != "ok":
             raise ValueError("Feedback backup failed integrity check")

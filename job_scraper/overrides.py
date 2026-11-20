@@ -15,6 +15,7 @@ assessment is never silently overruled by an old approval.
 
 import re
 import sqlite3
+from contextlib import closing
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -43,7 +44,7 @@ def ensure_schema(store) -> None:
         folder.mkdir(exist_ok=True)
         stamp = f"{datetime.now(UTC):%Y%m%dT%H%M%S%fZ}"
         backup = folder / f"{Path(path).stem}-pre-overrides-{stamp}.sqlite3"
-        with sqlite3.connect(backup) as target:
+        with closing(sqlite3.connect(backup)) as target:
             store.db.backup(target)
             if target.execute("PRAGMA integrity_check").fetchone()[0] != "ok":
                 raise ValueError("Override backup failed integrity check")

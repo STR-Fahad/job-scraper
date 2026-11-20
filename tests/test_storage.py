@@ -1,5 +1,6 @@
 import json
 import sqlite3
+from contextlib import closing
 
 import pytest
 
@@ -144,7 +145,7 @@ def test_canonicalization_keeps_identity_query_and_path_case():
 
 def test_reject_future_schema(tmp_path):
     path = tmp_path / "future.sqlite3"
-    with sqlite3.connect(path) as db:
+    with closing(sqlite3.connect(path)) as db, db:
         db.execute("PRAGMA user_version=999")
     with pytest.raises(ValueError, match="Unsupported"):
         Store(path)

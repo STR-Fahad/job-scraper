@@ -2,6 +2,7 @@
 
 import json
 import sqlite3
+from contextlib import closing
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -12,7 +13,7 @@ def migrate_v2(db, path):
         folder = path.parent / "backups"
         folder.mkdir(exist_ok=True)
         backup = folder / f"{path.stem}-v1-{datetime.now(UTC):%Y%m%dT%H%M%S%fZ}.sqlite3"
-        with sqlite3.connect(backup) as target:
+        with closing(sqlite3.connect(backup)) as target:
             db.backup(target)
             if target.execute("PRAGMA integrity_check").fetchone()[0] != "ok":
                 raise ValueError("Pre-migration backup failed integrity check")

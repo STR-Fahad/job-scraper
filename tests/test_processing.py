@@ -1,5 +1,6 @@
 import json
 import sqlite3
+from contextlib import closing
 from datetime import UTC, datetime, timedelta
 
 import pytest
@@ -222,7 +223,7 @@ def test_storage_backup_idempotence_and_original_records(tmp_path):
         assert not store.db.execute("PRAGMA foreign_key_check").fetchall()
     backups = list((tmp_path / "backups").glob("*-pre-processing-*.sqlite3"))
     assert len(backups) == 1
-    with sqlite3.connect(backups[0]) as backup:
+    with closing(sqlite3.connect(backups[0])) as backup:
         assert backup.execute("SELECT count(*) FROM jobs").fetchone()[0] == 1
         assert not backup.execute(
             "SELECT 1 FROM sqlite_master WHERE name='job_classifications'"

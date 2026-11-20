@@ -2,6 +2,7 @@ import json
 import sqlite3
 import subprocess
 import sys
+from contextlib import closing
 from datetime import UTC, datetime
 from email.utils import format_datetime
 
@@ -236,7 +237,7 @@ def test_source_not_checked_never_closed():
 def test_migration_preserves_rows_raw_and_timestamps(tmp_path):
     path = tmp_path / "v1.sqlite3"
     payload = sample(raw={"custom": "preserve"}).model_dump_json()
-    with sqlite3.connect(path) as db:
+    with closing(sqlite3.connect(path)) as db, db:
         db.executescript(SCHEMA)
         db.execute("PRAGMA user_version=1")
         db.execute("INSERT INTO jobs VALUES (1,?,?,?)", (payload, "2020-01-01", "2021-01-01"))
@@ -253,7 +254,7 @@ def test_migration_preserves_rows_raw_and_timestamps(tmp_path):
         assert store.list_jobs() == []
     backups = list((tmp_path / "backups").glob("*.sqlite3"))
     assert len(backups) == 1
-    with sqlite3.connect(backups[0]) as backup:
+    with closing(sqlite3.connect(backups[0])) as backup:
         assert backup.execute("PRAGMA user_version").fetchone()[0] == 1
     with Store(path) as store:
         assert len(store.list_jobs(True)) == 1
@@ -323,7 +324,7 @@ def test_migration_failure_rolls_back_ddl(tmp_path, monkeypatch):
 
     path = tmp_path / "rollback.sqlite3"
     payload = sample(raw={"slug": "1"}).model_dump_json()
-    with sqlite3.connect(path) as db:
+    with closing(sqlite3.connect(path)) as db, db:
         db.executescript(SCHEMA)
         db.execute("PRAGMA user_version=1")
         db.execute("INSERT INTO jobs VALUES (1,?,?,?)", (payload, "2020", "2021"))
@@ -337,7 +338,7 @@ def test_migration_failure_rolls_back_ddl(tmp_path, monkeypatch):
     monkeypatch.setitem(COLLECTORS, "arbeitnow", broken)
     with pytest.raises(RuntimeError, match="migration injection"):
         Store(path)
-    with sqlite3.connect(path) as db:
+    with closing(sqlite3.connect(path)) as db, db:
         assert db.execute("PRAGMA user_version").fetchone()[0] == 1
         assert "lifecycle_state" not in [r[1] for r in db.execute("PRAGMA table_info(job_sources)")]
         assert db.execute("SELECT payload FROM jobs").fetchone()[0] == payload

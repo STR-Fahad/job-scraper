@@ -1,6 +1,7 @@
 """Blocker overrides: proposals change nothing; only an approval for the CURRENT assessment lifts."""
 
 import sqlite3
+from contextlib import closing
 
 import pytest
 from test_decision import experience, row
@@ -165,7 +166,7 @@ def test_an_existing_database_is_backed_up_before_the_table_is_created(store, tm
     assert overrides.has_schema(store)
     overrides.ensure_schema(store)  # idempotent: no second backup
     assert len(list((tmp_path / "backups").glob("jobs-pre-overrides-*.sqlite3"))) == 1
-    with sqlite3.connect(backups[0]) as saved:
+    with closing(sqlite3.connect(backups[0])) as saved:
         assert saved.execute("PRAGMA integrity_check").fetchone()[0] == "ok"
 
 

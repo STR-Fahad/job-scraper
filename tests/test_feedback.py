@@ -1,6 +1,7 @@
 """Good fit / Not for me answers: an append-only opinion that moves jobs between dashboard tabs."""
 
 import sqlite3
+from contextlib import closing
 from types import SimpleNamespace
 
 import pytest
@@ -65,7 +66,7 @@ def test_the_table_is_append_only_and_created_after_a_verified_backup(store, tmp
     assert len(backups) == 1
     feedback.record(store, 1, "not_for_me")  # no second backup
     assert len(list((tmp_path / "backups").glob(pattern))) == 1
-    with sqlite3.connect(backups[0]) as saved:
+    with closing(sqlite3.connect(backups[0])) as saved:
         assert saved.execute("PRAGMA integrity_check").fetchone()[0] == "ok"
     with pytest.raises(sqlite3.DatabaseError, match="append-only"):
         store.db.execute("UPDATE fit_feedback SET verdict='good_fit'")

@@ -7,6 +7,7 @@ without any API client, collector or network access.
 
 import json
 import sqlite3
+from contextlib import closing
 
 import pytest
 
@@ -647,7 +648,7 @@ def test_review_schema_is_created_with_a_verified_backup(tmp_path):
         assert reviews.has_schema(opened)
     backups = list((tmp_path / "backups").glob("jobs-pre-reviews-*.sqlite3"))
     assert len(backups) == 1
-    with sqlite3.connect(backups[0]) as copy:
+    with closing(sqlite3.connect(backups[0])) as copy:
         assert copy.execute("PRAGMA integrity_check").fetchone()[0] == "ok"
         assert not copy.execute(
             "SELECT 1 FROM sqlite_master WHERE name='eligibility_reviews'"

@@ -5,6 +5,7 @@ import json
 import os
 import re
 import sqlite3
+from contextlib import closing
 from datetime import UTC, datetime
 from decimal import ROUND_HALF_UP, Decimal
 from pathlib import Path
@@ -495,7 +496,7 @@ def ensure_schema(store) -> None:
         target = (
             folder / f"{Path(path).stem}-pre-matching-{datetime.now(UTC):%Y%m%dT%H%M%S%fZ}.sqlite3"
         )
-        with sqlite3.connect(target) as backup:
+        with closing(sqlite3.connect(target)) as backup:
             store.db.backup(backup)
             if backup.execute("PRAGMA integrity_check").fetchone()[0] != "ok":
                 raise ValueError("Matching backup failed integrity check")

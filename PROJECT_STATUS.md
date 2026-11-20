@@ -2,6 +2,16 @@
 
 **Observed 2026-11-01 (Asia/Karachi); updated through Module 4 on 2026-11-04.** Recheck before acting; this is a snapshot, not a permanent count. See `PROJECT_HANDBOOK.md` for the architecture and rules.
 
+## 2026-11-20 — Wellness check and backup-connection fix (uncommitted at the time of writing)
+
+| Item | Result |
+|---|---|
+| Check | Full suite, Ruff check and format, `pip check`, `git diff --check`, main database integrity (ok, 0 foreign-key problems, no orphan assessments), offline CLI commands and every dashboard page (200, no server errors, POST without token refused 403) |
+| Bug fixed | `with sqlite3.connect(backup) as target:` only commits; it never closes the connection. The eight backup helpers (`feedback`, `judge`, `matching`, `migrations`, `overrides`, `processing`, `reviews`, `tracking`) left each backup file open until garbage collection. They now use `contextlib.closing`. Eight test files had the same pattern; writers there use `closing(...) as db, db:` to keep the commit |
+| Verification | **969 passed**, also with `-W error::ResourceWarning` (was about 178 unclosed-database warnings) |
+| Docs | The earlier notes saying `fit_feedback` and `blocker_overrides` were not created are corrected: both exist (13 feedback log rows; 1 judge override proposal for job 552, not decided) |
+| Not tested | Live collection and Gemini calls (network / billable) |
+
 ## 2026-11-20 — `good_enough_fit` tightened (commit `bf09f03`)
 
 | Item | Result |
@@ -30,7 +40,7 @@
 |---|---|
 | Commit | `aa26edc` DASHBOARD_FIT_REASONS_AND_NOTE on `main` (`feedback.py`, the dashboard `app.py`, `focus.py`, `render.py`, `tests/test_feedback.py`; documentation follows) |
 | Behavior | An opened job card has a "Your answer (optional reason)" form: tick one or more reasons (too senior, location or timezone, language, not my stack, not a software role, on-site or hybrid, company or pay, other), add an optional note (300 characters) and press Good fit or Not for me; the quick buttons still answer without a reason. The card shows the reasons and note and keeps the boxes ticked. The Calibration page and `feedback report` add a "Why you said Not for me" table split by the tool's tag at the time |
-| Storage | `fit_feedback` has a `reasons` column (comma-separated keys in a fixed order, validated); an earlier table without it is migrated by `ALTER TABLE` after a verified backup. The table is still not created in the real database (no answers yet). A pick never changes a tag |
+| Storage | `fit_feedback` has a `reasons` column (comma-separated keys in a fixed order, validated); an earlier table without it is migrated by `ALTER TABLE` after a verified backup. The table now exists in the real database (created on the first click; 13 log rows at 2026-11-20). A pick never changes a tag |
 | Verification | Full suite **927 passed** (3 new); Ruff check and format, `pip check` and `git diff --check` clean; checked in the running dashboard (To review tab, opened card form) |
 | Known limits | No answers exist yet, so the report is empty; an error rate needs about 50 answers. The dashboard must be restarted after code changes (a stale process kept old code once) |
 
@@ -40,7 +50,7 @@
 |---|---|
 | Commit | `bc38242` MODULE_1_AGGREGATORS_BLOCKER_OVERRIDES_FIT_FEEDBACK on `main` (code, tests and `config.toml`; documentation follows in the next commit) |
 | Module 1 | Four public aggregator collectors: Jobicy (JSON API), Remote OK (JSON; first array entry is a legal notice and is skipped), Working Nomads (JSON) and We Work Remotely (four RSS category feeds; DTD/entity feeds are refused). Each waits 5 s between requests and 6 h between runs; the source name and link are stored on every job (Remote OK and Jobicy ask for credit). 406 jobs were collected into the main database (5,656 jobs in total); Module 2 ran on them (168 Ineligible, 238 Unverified); 110 were software roles in the Module 3 pool |
-| Module 3 overrides | `overrides.py` and `override propose / approve / reject / list`: the judge or the user proposes lifting ONE hard blocker (`experience_gap` or `judgment_blocker`) for ONE job with a verbatim quote and a reason; a proposal changes nothing; only the user's approval for the CURRENT assessment lifts that blocker (it goes outdated if the job is judged again) and the tag is derived again from the other rules (never set to Eligible directly). Append-only table `blocker_overrides`, created after a verified backup on the first proposal (not created yet in the real database) |
+| Module 3 overrides | `overrides.py` and `override propose / approve / reject / list`: the judge or the user proposes lifting ONE hard blocker (`experience_gap` or `judgment_blocker`) for ONE job with a verbatim quote and a reason; a proposal changes nothing; only the user's approval for the CURRENT assessment lifts that blocker (it goes outdated if the job is judged again) and the tag is derived again from the other rules (never set to Eligible directly). Append-only table `blocker_overrides`, created after a verified backup on the first proposal (now exists in the real database: 1 judge proposal, job 552, awaiting the user's decision at 2026-11-20) |
 | Dashboard | New **To review** tab (jobs tagged only `good_enough_fit`), **Good fit** / **Not for me** buttons on every card (Good fit moves a job into Eligible, Not for me into Ineligible, Undo returns it to the tool's tag), an append-only `fit_feedback` record that stores the tag the user saw, a **Calibration** page (More menu) and `feedback report` / `feedback list`. A pick never changes a tag, assessment or tracker status. The table is created after a verified backup on the first click (no answers yet) |
 | Judging | In the main database 481 jobs are judged (110 aggregator jobs and 48 more from the plan, plus the earlier 323); final tags at 2026-11-19: Eligible 15 / Ineligible 358 / Unverified 108; 769 pool jobs still await a verdict. Batch 15 (50 jobs) was started in its own judge session on 2026-11-20. The three aggregator Eligible jobs all came from the `good_enough_fit` policy rule, not from the judge's own verdict |
 | Aggregator findings | About 49% of the 406 aggregator titles read senior or lead and about 3% junior; 23 of the first 50 verdicts were Unverified with `remote_region_condition_unclear` because the region sits in the feed's location field, which the judge cannot quote |

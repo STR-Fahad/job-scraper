@@ -33,6 +33,7 @@ no schema change, and no existing row, classification, profile or history is tou
 import hashlib
 import json
 import sqlite3
+from contextlib import closing
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Literal
@@ -559,7 +560,7 @@ def _backup_first_time(store) -> str | None:
     folder = Path(path).parent / "backups"
     folder.mkdir(exist_ok=True)
     target = folder / f"{Path(path).stem}-pre-judgment-{datetime.now(UTC):%Y%m%dT%H%M%S%fZ}.sqlite3"
-    with sqlite3.connect(target) as backup:
+    with closing(sqlite3.connect(target)) as backup:
         store.db.backup(backup)
         if backup.execute("PRAGMA integrity_check").fetchone()[0] != "ok":
             raise JudgmentError(["backup_failed_integrity_check"])

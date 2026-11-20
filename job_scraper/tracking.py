@@ -12,6 +12,7 @@ application. `Store.upsert` re-points an application to the surviving job when i
 
 import re
 import sqlite3
+from contextlib import closing
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from urllib.parse import urlsplit
@@ -72,7 +73,7 @@ def ensure_schema(store) -> bool:
         backup = (
             folder / f"{Path(path).stem}-pre-tracking-{datetime.now(UTC):%Y%m%dT%H%M%S%fZ}.sqlite3"
         )
-        with sqlite3.connect(backup) as target:
+        with closing(sqlite3.connect(backup)) as target:
             store.db.backup(target)
             if target.execute("PRAGMA integrity_check").fetchone()[0] != "ok":
                 raise ValueError("Tracking backup failed integrity check")

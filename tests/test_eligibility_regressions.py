@@ -2,6 +2,7 @@
 
 import json
 import sqlite3
+from contextlib import closing
 from pathlib import Path
 
 import pytest
@@ -220,7 +221,7 @@ def test_history_upgrade_preserves_existing_result_and_merge(tmp_path):
         assert not store.db.execute("PRAGMA foreign_key_check").fetchall()
     backups = list((tmp_path / "backups").glob("*-pre-processing-*.sqlite3"))
     assert len(backups) == 1
-    with sqlite3.connect(backups[0]) as db:
+    with closing(sqlite3.connect(backups[0])) as db:
         assert tuple(db.execute("SELECT * FROM job_classifications").fetchone()) == old
 
 
