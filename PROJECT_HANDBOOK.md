@@ -13,6 +13,12 @@ This is a single-user Windows/Python application in `C:\job scraper`; Git remote
 - **Module 2 version label.** Changing `processing.VERSION` makes every saved Module 3 verdict stale (the verdict cache key includes the screening version). Bump it only together with a planned re-import of the saved verdict files; commit `b102413` deliberately did not.
 - **Your sheet's colours.** In the user's Google Sheet, jobs tab: green = applied, red = not hiring; Applied tab: red = rejected; the Not hiring tab lists remote companies with no applicable job at that time and is not a blocklist.
 
+### Working rules added 2026-11-20
+
+- **Aggregator sources** (`jobicy`, `remoteok`, `workingnomads`, `weworkremotely`): public feeds, collected with `collect --source <name>`; every job carries the source credit. They lean senior and are mostly non-software, so expect most jobs to be screened out.
+- **Blocker overrides:** `override propose|approve|reject|list` (see `overrides.py`). A proposal never changes a tag; only the user's approval for the current assessment lifts one blocker for one job. The judge may propose, never approve.
+- **Good fit / Not for me:** the dashboard's To review tab holds `good_enough_fit` tags. Good fit moves a job into Eligible, Not for me into Ineligible; `feedback report` and the Calibration page compare those answers with the tool's tag at the time. A pick never changes a tag.
+
 ### Quick orientation
 
 | Area | Current state | Primary code |

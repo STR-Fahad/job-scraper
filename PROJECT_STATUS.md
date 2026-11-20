@@ -2,6 +2,19 @@
 
 **Observed 2026-11-01 (Asia/Karachi); updated through Module 4 on 2026-11-04.** Recheck before acting; this is a snapshot, not a permanent count. See `PROJECT_HANDBOOK.md` for the architecture and rules.
 
+## 2026-11-20 — Aggregators, blocker overrides and Good fit / Not for me (commit `bc38242`)
+
+| Item | Result |
+|---|---|
+| Commit | `bc38242` MODULE_1_AGGREGATORS_BLOCKER_OVERRIDES_FIT_FEEDBACK on `main` (code, tests and `config.toml`; documentation follows in the next commit) |
+| Module 1 | Four public aggregator collectors: Jobicy (JSON API), Remote OK (JSON; first array entry is a legal notice and is skipped), Working Nomads (JSON) and We Work Remotely (four RSS category feeds; DTD/entity feeds are refused). Each waits 5 s between requests and 6 h between runs; the source name and link are stored on every job (Remote OK and Jobicy ask for credit). 406 jobs were collected into the main database (5,656 jobs in total); Module 2 ran on them (168 Ineligible, 238 Unverified); 110 were software roles in the Module 3 pool |
+| Module 3 overrides | `overrides.py` and `override propose / approve / reject / list`: the judge or the user proposes lifting ONE hard blocker (`experience_gap` or `judgment_blocker`) for ONE job with a verbatim quote and a reason; a proposal changes nothing; only the user's approval for the CURRENT assessment lifts that blocker (it goes outdated if the job is judged again) and the tag is derived again from the other rules (never set to Eligible directly). Append-only table `blocker_overrides`, created after a verified backup on the first proposal (not created yet in the real database) |
+| Dashboard | New **To review** tab (jobs tagged only `good_enough_fit`), **Good fit** / **Not for me** buttons on every card (Good fit moves a job into Eligible, Not for me into Ineligible, Undo returns it to the tool's tag), an append-only `fit_feedback` record that stores the tag the user saw, a **Calibration** page (More menu) and `feedback report` / `feedback list`. A pick never changes a tag, assessment or tracker status. The table is created after a verified backup on the first click (no answers yet) |
+| Judging | In the main database 481 jobs are judged (110 aggregator jobs and 48 more from the plan, plus the earlier 323); final tags at 2026-11-19: Eligible 15 / Ineligible 358 / Unverified 108; 769 pool jobs still await a verdict. Batch 15 (50 jobs) was started in its own judge session on 2026-11-20. The three aggregator Eligible jobs all came from the `good_enough_fit` policy rule, not from the judge's own verdict |
+| Aggregator findings | About 49% of the 406 aggregator titles read senior or lead and about 3% junior; 23 of the first 50 verdicts were Unverified with `remote_region_condition_unclear` because the region sits in the feed's location field, which the judge cannot quote |
+| Verification | Full suite **924 passed**; Ruff check and format, `pip check` and `git diff --check` clean; main database integrity ok, 0 foreign-key violations; verified backup `data/backups/jobs-pre-aggregators-20261118-112745.sqlite3` (git-ignored) |
+| Known limits / next | (1) Planned: let the judge quote a job's location field as an eligibility item (needs care: a Module 2 version bump or changed requirement ids make saved verdicts stale). (2) The next collection should use a different source type (company boards via Greenhouse/Ashby/Lever need no new code). (3) Answer the To review jobs to start collecting calibration evidence; an error rate needs about 50 answers. (4) The Module 2 version label is still `pakistan-0-3-v3.9`; a bump needs a planned re-import of the saved verdict files |
+
 ## 2026-11-18 — Calibration fixes `b102413` and more judging (committed 2026-11-18)
 
 | Item | Result |
