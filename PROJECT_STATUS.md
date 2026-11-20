@@ -2,7 +2,7 @@
 
 **Observed 2026-11-01 (Asia/Karachi); updated through Module 4 on 2026-11-04.** Recheck before acting; this is a snapshot, not a permanent count. See `PROJECT_HANDBOOK.md` for the architecture and rules.
 
-## 2026-11-20 — Wellness check and backup-connection fix (uncommitted at the time of writing)
+## 2026-11-20 — Wellness check and backup-connection fix (commit `2c19365`; tag `close-backup-connections`)
 
 | Item | Result |
 |---|---|
