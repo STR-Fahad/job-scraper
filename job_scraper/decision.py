@@ -80,6 +80,20 @@ OUT_OF_SCOPE_CODES = frozenset(
         "partner_hardware_enablement_scope",
     }
 )
+# A "good enough" tag is only a policy shortcut: the verdicts show partial support. It is not given to
+# senior or management titles (a staff, principal, lead or manager role asks for more than the approved
+# experience even when no number is stated) nor to roles whose core is a skill the approved profile shows
+# only as listed (Linux and infrastructure, SRE and DevOps, containers, mobile, a database-administration
+# specialism). Such jobs stay UNVERIFIED for a human to judge. Calibrated on the user's first answers
+# (2026-11-20): 7 of 11 good-enough tags were rejected, all with these title patterns or a similar gap.
+SENIOR_TITLE = re.compile(
+    r"\b(?:staff|principal|lead|head of|director|vp|manager|architect|senior|sr\.?)\b", re.I
+)
+PROFILE_GAP_TITLE = re.compile(
+    r"\b(?:sre|site reliability|devops|infrastructure|kubernetes|linux|embedded|firmware|mobile|ios|"
+    r"android|react native|container|containers|sustaining|data cent(?:er|re)|dba|sql developer)\b",
+    re.I,
+)
 LOCATION_OPEN = re.compile(r"location|office|language|visa|citizen|residen|apac|emea|relocat", re.I)
 SEMANTICS = (
     "Final Module 3 suitability for applying, from the current assessment. It is not "
@@ -207,8 +221,11 @@ def _policy(row: dict, judgment: dict, score_status: str, why: str) -> dict | No
         for v in requirements
     )
     location_open = any(LOCATION_OPEN.search(c) for c in judgment.get("reason_codes", []))
+    title = row.get("title") or ""
+    shortcut_blocked = bool(SENIOR_TITLE.search(title) or PROFILE_GAP_TITLE.search(title))
     if (
-        len(mandatory) >= MIN_GOOD_ENOUGH_ITEMS
+        not shortcut_blocked
+        and len(mandatory) >= MIN_GOOD_ENOUGH_ITEMS
         and supported / len(mandatory) >= GOOD_ENOUGH_SHARE
         and not unmet
         and not location_open

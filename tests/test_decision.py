@@ -242,3 +242,66 @@ def test_policy_rules_never_override_hard_blockers_or_a_confirmed_judgment():
     eligible = _unverified_row(_verdicts("unclear", "unclear", "unclear", "unclear", "unclear"))
     eligible["judgment"]["suggested"] = "ELIGIBLE"
     assert decide(eligible)["reason_code"] == "session_judgment_eligible"
+
+
+def _good_enough_row(title):
+    verdicts = [
+        {"kinds": ["req"], "verdict": "partial", "job_quote": f"skill {n}", "cv_evidence": []}
+        for n in range(4)
+    ]
+    data = row(score=5, ceiling=85, coverage=40)
+    data.update(
+        {
+            "title": title,
+            "judgment": {
+                "id": 1,
+                "suggested": "UNVERIFIED",
+                "summary": "partly supported",
+                "reason_codes": [],
+                "blocking_requirement_ids": [],
+            },
+            "judgment_requirements": verdicts,
+        }
+    )
+    return data
+
+
+@pytest.mark.parametrize(
+    "title",
+    [
+        "AI Platform Engineer",
+        "Software Engineer - Python",
+        "Fullstack Engineer - AgenticOps (100% Remote)",
+        "AI Creative Engineer (Social Media)",
+        "Backend Engineer (Node.js / TypeScript)",
+    ],
+)
+def test_good_enough_still_applies_to_ordinary_engineering_titles(title):
+    result = decide(_good_enough_row(title))
+    assert (result["status"], result["reason_code"]) == ("ELIGIBLE", "good_enough_fit")
+
+
+@pytest.mark.parametrize(
+    "title",
+    [
+        "Staff Software Engineer, Ecosystem",
+        "Principal Engineer",
+        "Engineering Manager - AppArmor",
+        "Cloud Engineering Manager",
+        "Senior Backend Engineer",
+        "Site Reliability Engineer (f/m/d)",
+        "Mobile Engineer - React Native (100% Remote) - Worldwide",
+        "Software Engineer - Python - Container Images",
+        "Software Engineer, Cloud - Sustaining Engineering",
+        "SQL Developer - AI Prompting & Context Engineering",
+        "DevOps Engineer",
+        "Linux Infrastructure Engineer",
+    ],
+)
+def test_good_enough_is_not_given_to_senior_or_profile_gap_titles(title):
+    result = decide(_good_enough_row(title))
+    # the shortcut is withheld: the job stays UNVERIFIED for a human, never INELIGIBLE
+    assert (result["status"], result["reason_code"]) == (
+        "UNVERIFIED",
+        "session_judgment_unverified",
+    )
