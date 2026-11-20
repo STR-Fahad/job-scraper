@@ -231,6 +231,29 @@ def _action(item, csrf, next_path, view) -> str:
     return '<div class="acts">' + "".join(buttons) + "</div>"
 
 
+def _answer_form(item, csrf, next_path) -> str:
+    """Opened card: tick why, add a note, then answer. The answer never changes a tag."""
+    pick = item.get("fit") or {}
+    chosen = set(pick.get("reason_list") or [])
+    boxes = "".join(
+        f'<label><input type="checkbox" name="reason" value="{key}"'
+        f"{' checked' if key in chosen else ''}> {e(label)}</label>"
+        for key, label in feedback.REASONS.items()
+    )
+    return (
+        f'<form class="answer" method="post" action="/jobs/{item["job_id"]}/fit">'
+        f'<input type="hidden" name="csrf" value="{e(csrf)}">'
+        f'<input type="hidden" name="next" value="{e(next_path)}">'
+        "<h4>Your answer (optional reason)</h4>"
+        f'<div class="reasons">{boxes}</div>'
+        f'<input type="text" name="note" maxlength="300" value="{e(pick.get("note") or "")}" '
+        'placeholder="Optional note: why?" aria-label="Optional note">'
+        '<div class="answers"><button class="secondary" name="verdict" value="good_fit">'
+        'Good fit</button><button class="secondary" name="verdict" value="not_for_me">'
+        "Not for me</button></div></form>"
+    )
+
+
 def _list(title, lines) -> str:
     if not lines:
         return ""
@@ -256,7 +279,8 @@ def _card(item, csrf, next_path, view) -> str:
         pick = item["fit"]
         was = (pick.get("final_status") or "no tag").capitalize()
         answer = feedback.LABELS[pick["verdict"]]
-        note = f" · {e(pick['note'])}" if pick.get("note") else ""
+        why = ", ".join(feedback.REASONS[r] for r in pick.get("reason_list") or [])
+        note = (f" · {why}" if why else "") + (f" · {e(pick['note'])}" if pick.get("note") else "")
         tag = (
             f'<div class="why">{badge("info", "You: " + answer)} '
             f'<span class="mute">the tool said {e(was)}{note}</span></div>'
@@ -279,6 +303,7 @@ def _card(item, csrf, next_path, view) -> str:
         f'<div class="two">{_list("Evidence in your CV", detail["strengths"])}'
         f"{_list('Not shown in your CV', detail['gaps'])}</div>"
         f'<div class="chips">{chips}</div>'
+        f"{_answer_form(item, csrf, next_path)}"
         f'<p class="small links"><a href="/jobs/{item["job_id"]}">Full details and notes</a> · '
         f"{link_url(item['source_url'], 'Open posting')} · {link_url(item['application_url'], 'Apply link')}"
         + (
@@ -319,6 +344,17 @@ def calibration_page(report) -> str:
         f"<td>{v['not_for_me']}</td></tr>"
         for rule, v in report["by_rule"].items()
     )
+    reasons_table = ""
+    if report.get("by_reason"):
+        reason_rows = "".join(
+            f"<tr><td>{e(feedback.REASONS[r])}</td><td>{v['total']}</td>"
+            f"<td>{e(', '.join(f'{t} {n}' for t, n in sorted(v['by_tag'].items())))}</td></tr>"
+            for r, v in report["by_reason"].items()
+        )
+        reasons_table = (
+            "<h4>Why you said Not for me</h4><table><tr><th>Reason</th><th>Answers</th>"
+            "<th>By tool tag</th></tr>" + reason_rows + "</table>"
+        )
     return (
         "<h1>Calibration</h1>"
         f'<p class="sub">{report["picks"]} answer(s). The tag is what the tool said when you answered; '
@@ -330,7 +366,7 @@ def calibration_page(report) -> str:
         f"Unverified jobs you wanted: <b>{pct(report['unverified_wanted_pct'])}</b><br>"
         f"Agreement on Eligible and Ineligible tags: <b>{pct(report['agreement_pct'])}</b></p>"
         "<h4>By rule</h4><table><tr><th>Rule</th><th>Tool tag</th><th>Good fit</th>"
-        "<th>Not for me</th></tr>" + rules + "</table>"
+        "<th>Not for me</th></tr>" + rules + "</table>" + reasons_table
     )
 
 

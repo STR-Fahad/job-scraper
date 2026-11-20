@@ -15,6 +15,17 @@ TABLE = "fit_feedback"
 VERDICTS = ("good_fit", "not_for_me", "cleared")
 LABELS = {"good_fit": "Good fit", "not_for_me": "Not for me"}
 MAX_NOTE = 1000
+# Why the user answered the way they did (optional; several can be chosen).
+REASONS = {
+    "too_senior": "Too senior or too many years",
+    "location": "Location, region or timezone",
+    "language": "Language",
+    "stack": "Not my stack or skills",
+    "not_software": "Not a software role",
+    "onsite": "On-site or hybrid",
+    "company_pay": "Company or pay",
+    "other": "Other",
+}
 
 
 def has_schema(db) -> bool:
@@ -23,20 +34,33 @@ def has_schema(db) -> bool:
     )
 
 
-def ensure_schema(store) -> None:
-    """Create the table. An existing database is backed up and integrity-checked first."""
-    if has_schema(store.db):
-        return
+def _columns(db) -> set[str]:
+    return {row[1] for row in db.execute(f"PRAGMA table_info({TABLE})")}
+
+
+def _backup(store, label: str) -> None:
     path = store.db.execute("PRAGMA database_list").fetchone()[2]
-    if path:
-        folder = Path(path).parent / "backups"
-        folder.mkdir(exist_ok=True)
-        stamp = f"{datetime.now(UTC):%Y%m%dT%H%M%S%fZ}"
-        backup = folder / f"{Path(path).stem}-pre-feedback-{stamp}.sqlite3"
-        with sqlite3.connect(backup) as target:
-            store.db.backup(target)
-            if target.execute("PRAGMA integrity_check").fetchone()[0] != "ok":
-                raise ValueError("Feedback backup failed integrity check")
+    if not path:
+        return
+    folder = Path(path).parent / "backups"
+    folder.mkdir(exist_ok=True)
+    stamp = f"{datetime.now(UTC):%Y%m%dT%H%M%S%fZ}"
+    backup = folder / f"{Path(path).stem}-{label}-{stamp}.sqlite3"
+    with sqlite3.connect(backup) as target:
+        store.db.backup(target)
+        if target.execute("PRAGMA integrity_check").fetchone()[0] != "ok":
+            raise ValueError("Feedback backup failed integrity check")
+
+
+def ensure_schema(store) -> None:
+    """Create the table (or add the reasons column to an earlier one) after a verified backup."""
+    if has_schema(store.db):
+        if "reasons" not in _columns(store.db):
+            _backup(store, "pre-feedback-reasons")
+            with store.db:
+                store.db.execute(f"ALTER TABLE {TABLE} ADD COLUMN reasons TEXT")
+        return
+    _backup(store, "pre-feedback")
     with store.db:
         store.db.execute("BEGIN IMMEDIATE")
         # job_id is deliberately not a foreign key: a pick must survive job deduplication.
@@ -45,6 +69,7 @@ def ensure_schema(store) -> None:
             job_id INTEGER NOT NULL,
             verdict TEXT NOT NULL CHECK(verdict IN ('good_fit','not_for_me','cleared')),
             note TEXT,
+            reasons TEXT,
             final_status TEXT,
             final_code TEXT,
             assessment_id INTEGER,
@@ -64,6 +89,7 @@ def record(
     verdict,
     *,
     note=None,
+    reasons=None,
     final_status=None,
     final_code=None,
     assessment_id=None,
@@ -77,15 +103,21 @@ def record(
     text = (note or "").strip() or None
     if text and len(text) > MAX_NOTE:
         raise ValueError(f"note exceeds {MAX_NOTE} characters")
+    chosen = {r.strip() for r in (reasons or []) if r and r.strip()}
+    unknown = chosen - set(REASONS)
+    if unknown:
+        raise ValueError(f"unknown reason: {', '.join(sorted(unknown))}")
+    reason_text = ",".join(r for r in REASONS if r in chosen) or None
     ensure_schema(store)
     with store.db:
         new_id = store.db.execute(
-            f"INSERT INTO {TABLE}(job_id,verdict,note,final_status,final_code,assessment_id,"
-            "created_at) VALUES (?,?,?,?,?,?,?)",
+            f"INSERT INTO {TABLE}(job_id,verdict,note,reasons,final_status,final_code,"
+            "assessment_id,created_at) VALUES (?,?,?,?,?,?,?,?)",
             (
                 job_id,
                 verdict,
                 text,
+                reason_text,
                 final_status,
                 final_code,
                 assessment_id,
@@ -96,19 +128,34 @@ def record(
     return _entry(row)
 
 
+NAMES = (
+    "id",
+    "job_id",
+    "verdict",
+    "note",
+    "reasons",
+    "final_status",
+    "final_code",
+    "assessment_id",
+    "created_at",
+)
+
+
 def _entry(row) -> dict:
-    keys = ("id", "job_id", "verdict", "note", "final_status", "final_code", "assessment_id")
-    names = (*keys, "created_at")
-    return {name: row[index] for index, name in enumerate(names)}
+    entry = {name: row[index] for index, name in enumerate(NAMES)}
+    entry["reason_list"] = [r for r in (entry["reasons"] or "").split(",") if r in REASONS]
+    return entry
 
 
 def history(db, job_id=None) -> list[dict]:
     """Every row, oldest first. An absent table means nothing was ever picked."""
     if not has_schema(db):
         return []
+    columns = ",".join(n if n in _columns(db) else f"NULL AS {n}" for n in NAMES)
     query = (
-        "SELECT id,job_id,verdict,note,final_status,final_code,assessment_id,created_at "
-        f"FROM {TABLE}" + (" WHERE job_id=?" if job_id is not None else "") + " ORDER BY id"
+        f"SELECT {columns} FROM {TABLE}"
+        + (" WHERE job_id=?" if job_id is not None else "")
+        + " ORDER BY id"
     )
     return [_entry(r) for r in db.execute(query, (job_id,) if job_id is not None else ())]
 
@@ -137,7 +184,17 @@ def report(db) -> dict:
         return round(100 * part / whole) if whole else None
 
     total = {tag: sum(matrix[tag].values()) for tag in tags}
+    by_reason: dict[str, dict] = {}
+    for entry in picks:
+        if entry["verdict"] != "not_for_me":
+            continue
+        for reason in entry["reason_list"]:
+            slot = by_reason.setdefault(reason, {"total": 0, "by_tag": {}})
+            slot["total"] += 1
+            tag = entry["final_status"] or "none"
+            slot["by_tag"][tag] = slot["by_tag"].get(tag, 0) + 1
     return {
+        "by_reason": dict(sorted(by_reason.items(), key=lambda item: (-item[1]["total"], item[0]))),
         "picks": len(picks),
         "matrix": matrix,
         "by_rule": dict(sorted(by_rule.items())),
@@ -178,4 +235,12 @@ def render_report(data: dict) -> str:
         f"  {rule}: {v['tag']} | {v['good_fit']} | {v['not_for_me']}"
         for rule, v in data["by_rule"].items()
     ]
+    if data.get("by_reason"):
+        lines.append("Why you said Not for me (reason: answers, by tool tag):")
+        lines += [
+            f"  {REASONS[reason]}: {v['total']} ("
+            + ", ".join(f"{tag} {n}" for tag, n in sorted(v["by_tag"].items()))
+            + ")"
+            for reason, v in data["by_reason"].items()
+        ]
     return "\n".join(lines)

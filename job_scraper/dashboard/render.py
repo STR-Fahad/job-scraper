@@ -79,7 +79,8 @@ form.tools select{padding:9px 12px;border-radius:10px}form.tools button{padding:
 .tab.on .n{background:var(--okbg);color:var(--accent)}
 .job{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:start;background:var(--card);
 border:1px solid var(--line);border-radius:14px;margin-bottom:10px}
-.job details{grid-column:1;grid-row:1;min-width:0}.job .acts{grid-column:2;grid-row:1;display:flex;flex-direction:column;gap:6px;padding:14px 16px 0 0}.job form.apply{margin:0}
+.job details{grid-column:1;grid-row:1;min-width:0}.job .answer{margin:10px 0 4px}.job .answer .reasons label{display:inline-block;margin:0 12px 4px 0;font-size:.88rem}.job .answer input[type=text]{width:100%;margin:6px 0;box-sizing:border-box}.job .answer .answers{display:flex;gap:8px}
+.job .acts{grid-column:2;grid-row:1;display:flex;flex-direction:column;gap:6px;padding:14px 16px 0 0}.job form.apply{margin:0}
 .job summary{display:flex;gap:14px;align-items:center;padding:14px 16px;cursor:pointer;list-style:none;
 color:var(--ink);border-radius:14px}.job summary::-webkit-details-marker{display:none}
 .job summary:hover{background:var(--neutralbg)}.job .main{flex:1;min-width:0}

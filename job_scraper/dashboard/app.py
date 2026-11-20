@@ -248,12 +248,9 @@ class Dashboard:
             size = MAX_BODY + 1
         if size > MAX_BODY:
             return self.error_page(400, "Request too large.")
-        form = {
-            k: v[-1]
-            for k, v in parse_qs(
-                environ["wsgi.input"].read(size).decode("utf-8", "replace")
-            ).items()
-        }
+        fields = parse_qs(environ["wsgi.input"].read(size).decode("utf-8", "replace"))
+        form = {k: v[-1] for k, v in fields.items()}
+        form["reason"] = ",".join(fields.get("reason", []))  # several checkboxes share a name
         if not hmac.compare_digest(form.get("csrf", ""), self.csrf):
             return self.error_page(403, "Invalid or missing form token. Reload the page and retry.")
         parts = path.strip("/").split("/")
@@ -301,6 +298,7 @@ class Dashboard:
                     job_id,
                     form.get("verdict", ""),
                     note=form.get("note"),
+                    reasons=[r for r in form.get("reason", "").split(",") if r],
                     final_status=row.get("final_status"),
                     final_code=row.get("final_code"),
                     assessment_id=row.get("assessment_id"),

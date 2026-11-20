@@ -223,3 +223,89 @@ def test_calibration_page_and_cli_report(env, tmp_path, capsys):  # noqa: F811
     assert '"picks": 1' in capsys.readouterr().out
     assert cli.main(["feedback", "list", "--config", str(config)]) == 0
     assert "tool said UNVERIFIED" in capsys.readouterr().out
+
+
+def _post_form(app, path, pairs):
+    """POST several fields, including repeated ones (checkboxes share a name)."""
+    import io
+    from urllib.parse import urlencode
+
+    body = urlencode([("csrf", app.csrf), *pairs]).encode()
+    environ = {
+        "REQUEST_METHOD": "POST",
+        "PATH_INFO": path,
+        "QUERY_STRING": "",
+        "HTTP_HOST": "127.0.0.1:8765",
+        "CONTENT_LENGTH": str(len(body)),
+        "wsgi.input": io.BytesIO(body),
+    }
+    captured = {}
+
+    def start(status, headers):
+        captured["status"] = status
+
+    b"".join(app(environ, start))
+    return int(captured["status"].split()[0])
+
+
+def test_reasons_are_validated_ordered_and_stored(store):
+    entry = feedback.record(
+        store, 1, "not_for_me", reasons=["language", "too_senior", "language"], note="German"
+    )
+    # stored in the fixed list order, duplicates dropped
+    assert entry["reasons"] == "too_senior,language"
+    assert entry["reason_list"] == ["too_senior", "language"]
+    with pytest.raises(ValueError, match="unknown reason: nonsense"):
+        feedback.record(store, 1, "not_for_me", reasons=["nonsense"])
+    plain = feedback.record(store, 1, "good_fit")
+    assert plain["reasons"] is None and plain["reason_list"] == []
+
+
+def test_an_earlier_table_without_reasons_gets_the_column_after_a_backup(tmp_path):
+    path = tmp_path / "jobs.sqlite3"
+    with Store(path) as opened:
+        opened.upsert(job())
+        opened.db.execute(
+            "CREATE TABLE fit_feedback (id INTEGER PRIMARY KEY, job_id INTEGER NOT NULL, "
+            "verdict TEXT NOT NULL, note TEXT, final_status TEXT, final_code TEXT, "
+            "assessment_id INTEGER, created_at TEXT NOT NULL)"
+        )
+        opened.db.execute(
+            "INSERT INTO fit_feedback(job_id,verdict,created_at) VALUES (1,'good_fit','t')"
+        )
+        opened.db.commit()
+        # a read of the old table works before the migration
+        assert feedback.history(opened.db)[0]["reasons"] is None
+        feedback.record(opened, 1, "not_for_me", reasons=["location"])
+        assert [e["reasons"] for e in feedback.history(opened.db)] == [None, "location"]
+    assert list((tmp_path / "backups").glob("jobs-pre-feedback-reasons-*.sqlite3"))
+
+
+def test_reasons_and_note_come_from_the_card_and_show_in_the_report(env):  # noqa: F811
+    app, path, assessed = env
+    title = "Software Engineer, AI Coding Tasks"
+    _, _, opened = call(app, "GET", "/?d=UNVERIFIED")
+    assert 'name="reason" value="too_senior"' in opened and 'name="note"' in opened
+    status = _post_form(
+        app,
+        f"/jobs/{assessed}/fit",
+        [
+            ("verdict", "not_for_me"),
+            ("reason", "too_senior"),
+            ("reason", "language"),
+            ("note", "needs fluent German"),
+            ("next", "/"),
+        ],
+    )
+    assert status == 303
+    _, _, ineligible = call(app, "GET", "/?d=INELIGIBLE")
+    assert title in ineligible and "You: Not for me" in ineligible
+    assert "Too senior or too many years, Language" in ineligible
+    assert "needs fluent German" in ineligible
+    assert 'value="too_senior" checked' in ineligible  # the card remembers your reasons
+    with Store(path) as opened_store:
+        data = feedback.report(opened_store.db)
+    assert data["by_reason"]["too_senior"] == {"total": 1, "by_tag": {"UNVERIFIED": 1}}
+    assert "Why you said Not for me" in feedback.render_report(data)
+    _, _, page = call(app, "GET", "/calibration")
+    assert "Why you said Not for me" in page and "Language" in page
