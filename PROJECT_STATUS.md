@@ -2,6 +2,16 @@
 
 **Observed 2026-11-01 (Asia/Karachi); updated through Module 4 on 2026-11-04.** Recheck before acting; this is a snapshot, not a permanent count. See `PROJECT_HANDBOOK.md` for the architecture and rules.
 
+## 2026-11-20 — `good_enough_fit` tightened (commit `bf09f03`)
+
+| Item | Result |
+|---|---|
+| Commit | `bf09f03` MODULE_3_GOOD_ENOUGH_FIT_TIGHTENED on `main` (`decision.py`, `tests/test_decision.py`). Tag `good-enough-fit-tightened` |
+| Behavior | `good_enough_fit` is withheld from senior/management titles and profile-gap titles (SRE, DevOps, infrastructure, Linux, Kubernetes, containers, mobile, embedded, sustaining, data centre, DBA, SQL developer); those jobs stay UNVERIFIED, never Ineligible. Derived at read time: no database change, no saved verdict changes |
+| Effect on the user's 11 answers | 4 of 5 jobs still tagged Eligible were confirmed Good fit; the 5 rejected infra/mobile/SQL jobs moved to Unverified. Remaining miss: Nexoya Node.js backend. Tags at the last re-rank: 727 judged, Eligible 11 / Ineligible 560 / Unverified 156, 461 awaiting |
+| Verification | Full suite **969 passed**; Ruff check and format, `pip check` and `git diff --check` clean |
+| Known limits | Title-based keywords can miss or over-block; restart the dashboard server to see the rule; judging is stopped |
+
 ## 2026-11-20 — Module 2 reads bare region locations, verdict cache decoupled (commit `718fc32`)
 
 | Item | Result |

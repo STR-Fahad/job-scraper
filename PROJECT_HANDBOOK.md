@@ -17,7 +17,7 @@ This is a single-user Windows/Python application in `C:\job scraper`; Git remote
 
 - **Aggregator sources** (`jobicy`, `remoteok`, `workingnomads`, `weworkremotely`): public feeds, collected with `collect --source <name>`; every job carries the source credit. They lean senior and are mostly non-software, so expect most jobs to be screened out.
 - **Blocker overrides:** `override propose|approve|reject|list` (see `overrides.py`). A proposal never changes a tag; only the user's approval for the current assessment lifts one blocker for one job. The judge may propose, never approve.
-- **Good fit / Not for me:** the dashboard's To review tab holds `good_enough_fit` tags. Good fit moves a job into Eligible, Not for me into Ineligible; `feedback report` and the Calibration page compare those answers with the tool's tag at the time. A pick never changes a tag.
+- **Good fit / Not for me:** the dashboard's To review tab holds `good_enough_fit` tags. Good fit moves a job into Eligible, Not for me into Ineligible; `feedback report` and the Calibration page compare those answers with the tool's tag at the time. A pick never changes a tag. `good_enough_fit` is withheld (job stays UNVERIFIED, never Ineligible) from senior/management titles (`SENIOR_TITLE`) and profile-gap titles (`PROFILE_GAP_TITLE`: SRE, DevOps, infrastructure, Linux, Kubernetes, containers, mobile, embedded, sustaining, data centre, DBA, SQL developer); derived at read time, no database change.
 
 ### Quick orientation
 
