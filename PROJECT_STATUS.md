@@ -2,6 +2,18 @@
 
 **Observed 2026-11-01 (Asia/Karachi); updated through Module 4 on 2026-11-04.** Recheck before acting; this is a snapshot, not a permanent count. See `PROJECT_HANDBOOK.md` for the architecture and rules.
 
+## 2026-11-20 — Module 2 reads bare region locations, verdict cache decoupled (commit `718fc32`)
+
+| Item | Result |
+|---|---|
+| Commit | `718fc32` MODULE_2_BARE_LOCATION_REGIONS_AND_VERDICT_CACHE on `main` (`screening.py`, `processing.py`, `matching.py` and two test files; documentation follows) |
+| Module 2 (`pakistan-0-3-v3.11`) | A location that is only a region or country list, as aggregator feeds write it ("USA Only", "Canada", "LATAM", "Europe", "Switzerland, Australia, Germany"), counts as a region restriction when EVERY label is a known region or country; a list without Pakistan makes the job INELIGIBLE. Cities, unknown text, APAC/Asia and time-zone text ("CET (+/- 3 hours)") stay UNVERIFIED. A posting that itself says the role can be done from anywhere ("work remotely from anywhere in the world", "hiring worldwide", "open to candidates in any country") overrides a bare country (`OPEN_HIRING`), while "anywhere in Europe" is a limit |
+| Found by a test | A separate test database (`data/loc-test/`, git-ignored) built from about 1,800 real jobs showed the first version wrongly excluded 16 jobs whose posting opens the role to anywhere; fixed before the final apply |
+| Module 3 cache | The verdict cache key now uses a fixed screening basis (`matching.SCREENING_VERSION` = `pakistan-0-3-v3.9`) instead of `processing.VERSION`; a job's own Module 2 status is already in its fingerprint, so a Module 2 rules change no longer stales every saved verdict |
+| Effect on the real data | Backups taken before each run (`data/backups/jobs-pre-module2-v3.10b-*`, `jobs-pre-module2-v3.11-*`, git-ignored). 191 jobs moved from Unverified to Ineligible at Module 2 (about half Arbeitnow bare countries, the rest Jobicy, We Work Remotely and others); 54 of the first-version 207 had already been judged and leave the pool; all saved verdicts stayed current (stale 0); pool 1,188 jobs, 556 awaiting a verdict at that time; tags at that time Eligible 18 / Ineligible 477 / Unverified 137 (632 current). Judging continued afterwards: the plan counter showed 780 judged jobs and 430 plan jobs left |
+| Verification | Full suite **952 passed** (25 new tests: bare-location cases, the anywhere-posting override, the fixed cache key); Ruff, `pip check` and `git diff --check` clean; main database integrity ok, 0 foreign-key violations |
+| Known limits / next | Time-zone locations and APAC/Asia stay Unverified; "work from anywhere with the setup that suits you" style benefit text counts as open (cautious: the job stays Unverified); the judge still cannot quote the location field itself (the remaining part of the planned location-field change); `good_enough_fit` still lets weak core-stack matches through (7 of 11 answered tags were rejected) |
+
 ## 2026-11-20 — Reasons and a note on Good fit / Not for me (commit `aa26edc`)
 
 | Item | Result |
