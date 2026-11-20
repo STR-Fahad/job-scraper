@@ -256,3 +256,78 @@ def test_remote_region_location_text(location, geo):
 def test_canonical_wording_that_is_not_a_geography_or_time_zone_limit(sentence, status):
     result, _ = place(["Home based - Worldwide"], sentence)
     assert result.status == status
+
+
+@pytest.mark.parametrize(
+    "location,geo",
+    [
+        (["USA Only"], "INELIGIBLE"),
+        (["Canada Only"], "INELIGIBLE"),
+        (["Africa Only"], "INELIGIBLE"),
+        (["LATAM"], "INELIGIBLE"),
+        (["Europe"], "INELIGIBLE"),
+        (["USA"], "INELIGIBLE"),
+        (["Switzerland, Australia, Germany"], "INELIGIBLE"),
+        (["Switzerland, Pakistan"], "ELIGIBLE"),
+        (["Pakistan"], "ELIGIBLE"),
+        (["Worldwide"], "ELIGIBLE"),
+        (["Anywhere"], "ELIGIBLE"),
+        (["APAC"], "UNVERIFIED"),
+        (["Asia"], "UNVERIFIED"),
+        (["Munich, Germany"], "UNVERIFIED"),  # a city is not a region label
+        (["Remote"], "UNVERIFIED"),
+        (["Time zone: CET (+/- 3 hours)"], "UNVERIFIED"),
+        (["Your Remote Home Office"], "UNVERIFIED"),
+    ],
+)
+def test_bare_region_or_country_location_text(location, geo):
+    assert place(location)[0].status == geo
+
+
+def test_a_bare_region_does_not_override_a_posting_that_says_anywhere():
+    from job_scraper.screening import classify
+
+    posting = job(
+        title="Python Engineer",
+        workplace_type="unknown",
+        location=["USA Only"],
+        description="Build Python services. We hire from anywhere in the world.",
+    )
+    assert classify(posting).status != "ELIGIBLE"
+
+
+def test_changing_module_2_rules_does_not_stale_saved_judgments(monkeypatch):
+    from job_scraper import matching, processing
+    from job_scraper.config import MatchingConfig
+
+    before = matching._rule_hash(MatchingConfig())
+    monkeypatch.setattr(processing, "VERSION", "pakistan-0-3-vNEXT")
+    assert matching._rule_hash(MatchingConfig()) == before
+    assert matching.SCREENING_VERSION == "pakistan-0-3-v3.9"
+
+
+@pytest.mark.parametrize(
+    "description,geo",
+    [
+        ("Perks. Work remotely from anywhere in the world, subject to hours.", "UNVERIFIED"),
+        ("Benefits: Work remotely from Anywhere, with flexibility.", "UNVERIFIED"),
+        ("We are hiring worldwide for this role.", "UNVERIFIED"),
+        # limits and company boilerplate are not openings: the bare country still excludes
+        ("This role can be performed remotely from anywhere in Europe.", "INELIGIBLE"),
+        ("Our customers are located worldwide. Join our team in the office.", "INELIGIBLE"),
+        (
+            "Benefits are globally designed and locally delivered. People from around the world.",
+            "INELIGIBLE",
+        ),
+    ],
+)
+def test_bare_country_defers_to_a_posting_that_opens_the_role_to_anywhere(description, geo):
+    from job_scraper.screening import classify
+
+    posting = job(
+        title="Python Engineer",
+        workplace_type="unknown",
+        location=["Switzerland"],
+        description="Build Python services. Python experience required. " + description,
+    )
+    assert classify(posting).status == geo

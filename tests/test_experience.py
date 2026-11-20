@@ -590,7 +590,7 @@ def test_module2_screening_does_not_depend_on_the_experience_representation():
 
     import job_scraper.screening as screening
 
-    assert VERSION == "pakistan-0-3-v3.9"
+    assert VERSION == "pakistan-0-3-v3.11"
     assert "experience_months" not in Path(screening.__file__).read_text(encoding="utf-8")
     result = classify(_job("x", description=ELIGIBLE_TEXT))
     assert result.status == "ELIGIBLE"

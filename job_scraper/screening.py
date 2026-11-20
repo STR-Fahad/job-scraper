@@ -183,7 +183,30 @@ REGION_STATE = {
 }
 
 
+# A location that is only a region or country list, as aggregator feeds write it: "USA Only",
+# "Canada", "LATAM", "Switzerland, Australia, Germany". It counts only when EVERY label is a known
+# region or country, so a city ("Munich, Germany") or free text states nothing here.
+BARE_LOCATION_SUFFIX = re.compile(r"\s+(?:only|based|residents?|citizens?|candidates?)$", re.I)
+
+
+# A posting that says in its own text that the role can be done from anywhere ("work remotely from
+# anywhere in the world", "hiring worldwide") overrides a bare country in the location field, which
+# is often only the company's office: the bare-location rule then states nothing. "Anywhere in
+# Europe" is a limit, not an opening.
+OPEN_HIRING = re.compile(
+    r"\b(?:work(?:ing)?|hire|hiring|candidates?|applicants?|talent|remote(?:ly)?)\b\W+"
+    r"(?:\w+\W+){0,3}?(?:from\s+)?"
+    r"(?:anywhere(?!\s+in\s+(?!the\s+world\b))|worldwide|any\s+country)",
+    re.I,
+)
+
+
+def _known_region(label: str) -> bool:
+    return label.casefold() in REGION_STATE or territory(label) != "UNVERIFIED"
+
+
 def home_based_regions(job) -> list[str]:
+    open_posting = bool(OPEN_HIRING.search(job.description or ""))
     found = [m[1].strip(" .") for value in job.location for m in HOME_BASED.finditer(value)]
     for value in job.location:
         for m in REMOTE_REGION.finditer(value):
@@ -197,6 +220,14 @@ def home_based_regions(job) -> list[str]:
                 for label in labels
             ):
                 found.extend(labels)
+        if open_posting:
+            continue  # the posting itself says anywhere: a bare location states nothing
+        if HOME_BASED.search(value) or REMOTE_REGION.search(value) or REMOTE_IN_LIST.search(value):
+            continue
+        text = BARE_LOCATION_SUFFIX.sub("", value.strip(" ."))
+        labels = [x.strip(" .") for x in re.split(r",|;|/|\band\b|\bor\b", text) if x.strip(" .")]
+        if labels and all(_known_region(label) for label in labels):
+            found.extend(labels)
     return found
 
 

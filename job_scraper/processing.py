@@ -13,7 +13,7 @@ from .models import Job
 from .screening import CATEGORIES as CATEGORIES
 from .screening import classify
 
-VERSION = "pakistan-0-3-v3.9"
+VERSION = "pakistan-0-3-v3.11"
 
 DIMENSIONS = ("category", "experience", "geography", "restrictions", "workplace")
 

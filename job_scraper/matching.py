@@ -32,7 +32,6 @@ from .evidence import (
 )
 from .experience import minimum_months
 from .gemini import DEFAULT_MODEL, _safe_error
-from .processing import VERSION as SCREENING_VERSION
 from .processing import inspect_results
 from .requirements import (
     SCHEMA as GEMINI_RESPONSE_SCHEMA,
@@ -41,6 +40,11 @@ from .requirements import (
     VERSION as REQUIREMENT_VERSION,
 )
 from .requirements import ClassifiedRequirements, extract_requirements, resolve_classifications
+
+# Judgments depend on Module 2 only through each job's eligibility status, which is part of the job
+# fingerprint, so a change to Module 2's rules must NOT make every saved judgment stale. This basis is
+# part of the verdict cache key and stays fixed; change it only when judgments must be redone.
+SCREENING_VERSION = "pakistan-0-3-v3.9"
 
 PROMPT_VERSION = "match-v9"
 ANALYSIS_SCHEMA_VERSION = "analysis-v7"
