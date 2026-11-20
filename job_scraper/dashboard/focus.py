@@ -1,16 +1,22 @@
 """The Focus page: the simple main view of the dashboard.
 
-Jobs are shown only through the Module 3 final decision filters (Eligible, Unverified,
-Ineligible). A job marked as applied leaves those filters and waits under Applied, using the
-existing application tracker (`tracking`): nothing new is stored and nothing here applies for
-you. Pakistan hiring stays the separate Module 2 status shown on each job.
+Jobs are shown through the Module 3 final decision filters (Eligible, Unverified, Ineligible)
+plus a To review tab: jobs the tool tagged only "good enough" (the `good_enough_fit` policy rule)
+wait there for the user's answer. "Good fit" moves a job into the Eligible tab and "Not for me"
+into the Ineligible tab (`feedback`, an append-only record of the user's own opinion; a pick
+never changes a tag or an assessment and is kept as calibration evidence). A job marked as applied
+leaves the filters and waits under Applied, using the existing application tracker (`tracking`);
+nothing here applies for you. Pakistan hiring stays the separate Module 2 status on each job.
 """
 
+from .. import feedback
 from . import data
 from .render import badge, e, human, link_url, pager, query
 
-TABS = ("ELIGIBLE", "UNVERIFIED", "INELIGIBLE")
+TABS = ("REVIEW", "ELIGIBLE", "UNVERIFIED", "INELIGIBLE")
+REVIEW_CODE = "good_enough_fit"
 LABELS = {
+    "REVIEW": "To review",
     "ELIGIBLE": "Eligible",
     "UNVERIFIED": "Unverified",
     "INELIGIBLE": "Ineligible",
@@ -20,6 +26,8 @@ HELP = {
     "ELIGIBLE": "Worth applying to: your CV supports the core of the role and nothing rules it out.",
     "UNVERIFIED": "Not settled either way. Often the CV does not show the main skill, which is not a rejection.",
     "INELIGIBLE": "A hard blocker was found, such as an experience minimum far above yours.",
+    "REVIEW": "The tool says these are good enough to apply to, but some evidence is only partial. "
+    "Say Good fit to move a job to Eligible, or Not for me to move it to Ineligible.",
     "APPLIED": "Jobs you applied to. Undo moves a job back to Saved and returns it to its filter.",
 }
 # A job leaves the decision filters once it is past "saved" or "planned".
@@ -70,10 +78,24 @@ def _detail(snapshot, job_id) -> dict:
     }
 
 
-def build(snapshot, applications: dict[int, dict], raw: dict) -> dict:
+def build(snapshot, applications: dict[int, dict], raw: dict, fit: dict | None = None) -> dict:
+    fit = fit or {}
     sources = {s for r in snapshot.rows for s in r["sources"]}
     p = params(raw, sources)
     applied = {jid for jid, a in applications.items() if a["status"] in SUBMITTED}
+    picked = {jid: e["verdict"] for jid, e in fit.items() if jid not in applied}
+
+    def tab_of(r) -> str:
+        """The tab a job sits in: your pick first, then the tool's tag (good-enough tags wait)."""
+        pick = picked.get(r["job_id"])
+        if pick == "good_fit":
+            return "ELIGIBLE"
+        if pick == "not_for_me":
+            return "INELIGIBLE"
+        if r["final_status"] == "ELIGIBLE" and r.get("final_code") == REVIEW_CODE:
+            return "REVIEW"
+        return r["final_status"]
+
     open_jobs = [
         r
         for r in snapshot.rows
@@ -82,7 +104,7 @@ def build(snapshot, applications: dict[int, dict], raw: dict) -> dict:
         and r["listed"]
         and r["job_id"] not in applied
     ]
-    counts = {k: sum(r["final_status"] == k for r in open_jobs) for k in TABS}
+    counts = {k: sum(tab_of(r) == k for r in open_jobs) for k in TABS}
     counts["APPLIED"] = len([j for j in applied if j in snapshot.by_id])
     if p["d"] == "APPLIED":
         pool = [snapshot.by_id[j] for j in applied if j in snapshot.by_id]
@@ -91,7 +113,7 @@ def build(snapshot, applications: dict[int, dict], raw: dict) -> dict:
             reverse=True,
         )
     else:
-        pool = [r for r in open_jobs if r["final_status"] == p["d"]]
+        pool = [r for r in open_jobs if tab_of(r) == p["d"]]
         pool.sort(key=lambda r: (-(r.get("score") or 0), r["job_id"]))
     needle = p["q"].casefold()
     pool = [
@@ -107,6 +129,7 @@ def build(snapshot, applications: dict[int, dict], raw: dict) -> dict:
         {
             **r,
             "application": applications.get(r["job_id"]),
+            "fit": fit.get(r["job_id"]),
             "detail": _detail(snapshot, r["job_id"]),
         }
         for r in pool[start : start + data.PAGE_SIZE]
@@ -168,18 +191,44 @@ def _search(result) -> str:
     )
 
 
-def _action(item, csrf, next_path, applied_tab) -> str:
-    base = (
+def _form(item, csrf, next_path, action, name, value, label, title, klass="secondary"):
+    return (
+        f'<form class="apply" method="post" action="/jobs/{item["job_id"]}/{action}">'
         f'<input type="hidden" name="csrf" value="{e(csrf)}">'
         f'<input type="hidden" name="next" value="{e(next_path)}">'
+        f'<input type="hidden" name="{name}" value="{value}">'
+        f'<button class="{klass}" title="{e(title)}">{label}</button></form>'
     )
-    status, label = ("SAVED", "Undo") if applied_tab else ("APPLIED", "Mark applied")
-    return (
-        f'<form class="apply" method="post" action="/jobs/{item["job_id"]}/status">{base}'
-        f'<input type="hidden" name="status" value="{status}">'
-        f'<button class="secondary" title="Moves the job {"back to Saved" if applied_tab else "to Applied"}">'
-        f"{label}</button></form>"
-    )
+
+
+def _action(item, csrf, next_path, view) -> str:
+    def fit(verdict, label, title, klass="secondary"):
+        return _form(item, csrf, next_path, "fit", "verdict", verdict, label, title, klass)
+
+    def status(value, label, title):
+        return _form(item, csrf, next_path, "status", "status", value, label, title)
+
+    pick = (item.get("fit") or {}).get("verdict")
+    if view == "APPLIED":
+        buttons = [status("SAVED", "Undo", "Moves the job back to Saved")]
+    elif pick == "good_fit":
+        buttons = [
+            status("APPLIED", "Mark applied", "Moves the job to Applied"),
+            fit("not_for_me", "Not for me", "Changes your answer: moves the job to Ineligible"),
+            fit("cleared", "Undo", "Withdraws your answer; the tool's tag decides again"),
+        ]
+    elif pick == "not_for_me":
+        buttons = [
+            fit("good_fit", "Good fit", "Changes your answer: moves the job to Eligible"),
+            fit("cleared", "Undo", "Withdraws your answer; the tool's tag decides again"),
+        ]
+    else:
+        buttons = [
+            fit("good_fit", "Good fit", "Confirms the job: moves it to Eligible"),
+            fit("not_for_me", "Not for me", "Rejects the job: moves it to Ineligible"),
+            status("APPLIED", "Mark applied", "Moves the job to Applied"),
+        ]
+    return '<div class="acts">' + "".join(buttons) + "</div>"
 
 
 def _list(title, lines) -> str:
@@ -188,7 +237,8 @@ def _list(title, lines) -> str:
     return f"<div><h4>{e(title)}</h4><ul>{''.join(f'<li>{e(x)}</li>' for x in lines)}</ul></div>"
 
 
-def _card(item, csrf, next_path, applied_tab) -> str:
+def _card(item, csrf, next_path, view) -> str:
+    applied_tab = view == "APPLIED"
     detail, application = item["detail"], item["application"]
     status = item.get("final_status") or "NONE"
     score = (
@@ -201,6 +251,15 @@ def _card(item, csrf, next_path, applied_tab) -> str:
         tag = (
             f'<div class="why">{badge("info", application["status"])} '
             f'<span class="mute">applied {e(application["applied_on"] or "date not set")}</span></div>'
+        )
+    elif item.get("fit"):
+        pick = item["fit"]
+        was = (pick.get("final_status") or "no tag").capitalize()
+        answer = feedback.LABELS[pick["verdict"]]
+        note = f" · {e(pick['note'])}" if pick.get("note") else ""
+        tag = (
+            f'<div class="why">{badge("info", "You: " + answer)} '
+            f'<span class="mute">the tool said {e(was)}{note}</span></div>'
         )
     else:
         tag = f'<div class="why"><span class="dot"></span>{e(_reason(item))}</div>'
@@ -236,7 +295,42 @@ def _card(item, csrf, next_path, applied_tab) -> str:
         f'<div class="main"><div class="title">{e(item["title"])}</div>'
         f'<div class="meta">{e(item["company"])} · {e(sources)} · #{item["job_id"]}</div>{tag}</div>'
         f'{score}</summary><div class="detail">{body}</div></details>'
-        f"{_action(item, csrf, next_path, applied_tab)}</article>"
+        f"{_action(item, csrf, next_path, view)}</article>"
+    )
+
+
+def calibration_page(report) -> str:
+    """Your Good fit / Not for me answers set against the tool's tag when you gave them."""
+    if not report["picks"]:
+        return (
+            '<h1>Calibration</h1><p class="sub">No answers yet. Press Good fit or Not for me on '
+            "a job; your answers are compared here with the tool's tag at that moment.</p>"
+        )
+
+    def pct(value):
+        return "n/a" if value is None else f"{value}%"
+
+    rows = "".join(
+        f"<tr><td>{e(tag)}</td><td>{c['good_fit']}</td><td>{c['not_for_me']}</td></tr>"
+        for tag, c in report["matrix"].items()
+    )
+    rules = "".join(
+        f"<tr><td>{e(human(rule))}</td><td>{e(v['tag'])}</td><td>{v['good_fit']}</td>"
+        f"<td>{v['not_for_me']}</td></tr>"
+        for rule, v in report["by_rule"].items()
+    )
+    return (
+        "<h1>Calibration</h1>"
+        f'<p class="sub">{report["picks"]} answer(s). The tag is what the tool said when you answered; '
+        "your answer never changes a tag.</p>"
+        "<table><tr><th>Tool tag</th><th>Good fit</th><th>Not for me</th></tr>" + rows + "</table>"
+        f"<p>Eligible tags you confirmed: <b>{pct(report['eligible_confirmed_pct'])}</b><br>"
+        f"Ineligible tags you would still apply to (misses): "
+        f"<b>{pct(report['ineligible_wanted_pct'])}</b><br>"
+        f"Unverified jobs you wanted: <b>{pct(report['unverified_wanted_pct'])}</b><br>"
+        f"Agreement on Eligible and Ineligible tags: <b>{pct(report['agreement_pct'])}</b></p>"
+        "<h4>By rule</h4><table><tr><th>Rule</th><th>Tool tag</th><th>Good fit</th>"
+        "<th>Not for me</th></tr>" + rules + "</table>"
     )
 
 
@@ -244,7 +338,7 @@ def focus_page(result, csrf) -> str:
     p, counts = result["params"], result["counts"]
     next_path = "/?" + query(p)
     applied_tab = p["d"] == "APPLIED"
-    cards = "".join(_card(i, csrf, next_path, applied_tab) for i in result["items"])
+    cards = "".join(_card(i, csrf, next_path, p["d"]) for i in result["items"])
     if not cards:
         nothing = (
             "No jobs match this search."

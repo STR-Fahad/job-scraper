@@ -13,7 +13,7 @@ import time
 from urllib.parse import parse_qs, quote, urlencode, urlsplit
 from wsgiref.simple_server import WSGIRequestHandler, WSGIServer, make_server
 
-from .. import ranking, reviews, tracking
+from .. import feedback, ranking, reviews, tracking
 from ..config import MatchingConfig
 from ..storage import Store
 from . import data, focus, render
@@ -122,7 +122,9 @@ class Dashboard:
         db = self.ro()
         try:
             if path == "/":
-                result = focus.build(snapshot, tracking.statuses_by_job(db), query)
+                result = focus.build(
+                    snapshot, tracking.statuses_by_job(db), query, feedback.latest(db)
+                )
                 return self.page(
                     "Jobs for you",
                     "focus",
@@ -131,6 +133,9 @@ class Dashboard:
                     banner,
                     narrow=True,
                 )
+            if path == "/calibration":
+                body = focus.calibration_page(feedback.report(db))
+                return self.page("Calibration", "calibration", body, query, banner, narrow=True)
             if path == "/overview":
                 body = render.overview(
                     snapshot,
@@ -288,6 +293,20 @@ class Dashboard:
                     note=form.get("note"),
                 )
                 return f"Status is {result['status']}." if result["changed"] else "No change."
+            if action == "fit":
+                snapshot, _ = self.cache.current()
+                row = (snapshot.by_id.get(job_id) if snapshot else None) or {}
+                entry = feedback.record(
+                    store,
+                    job_id,
+                    form.get("verdict", ""),
+                    note=form.get("note"),
+                    final_status=row.get("final_status"),
+                    final_code=row.get("final_code"),
+                    assessment_id=row.get("assessment_id"),
+                )
+                label = feedback.LABELS.get(entry["verdict"])
+                return f"Marked {label}." if label else "Pick cleared."
             if action == "details":
                 result = tracking.update_details(
                     store,

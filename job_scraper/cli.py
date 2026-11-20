@@ -8,6 +8,8 @@ from pathlib import Path
 import httpx
 from pydantic import ValidationError
 
+from . import feedback as fit_feedback
+from . import overrides as blocker_overrides
 from .collectors import COLLECTORS
 from .config import load_settings
 from .discovery import discover
@@ -135,6 +137,28 @@ def main(argv=None):
     ranking.add_argument("--limit", type=positive_int)
     ranking.add_argument("--model", help="Only count assessments made with this model")
     ranking.add_argument("--json", action="store_true", help="Print machine-readable output")
+    override = sub.add_parser(
+        "override",
+        help="Propose, approve or reject lifting one hard blocker for one job (never automatic)",
+    )
+    override.add_argument("action", choices=["propose", "approve", "reject", "list"])
+    override.add_argument("--job-id", type=int)
+    override.add_argument("--override-id", type=int)
+    override.add_argument("--blocker", choices=list(blocker_overrides.BLOCKERS))
+    override.add_argument("--quote", help="A line copied verbatim from the job text")
+    override.add_argument("--reason", help="Why the blocker is a misreading of the posting")
+    override.add_argument(
+        "--proposed-by", choices=list(blocker_overrides.PROPOSERS), default="user"
+    )
+    override.add_argument("--note", help="approve/reject: your note")
+    override.add_argument("--json", action="store_true", help="Print machine-readable output")
+    feedback_cmd = sub.add_parser(
+        "feedback",
+        help="Your Good fit / Not for me answers compared with the tool's tags (calibration)",
+    )
+    feedback_cmd.add_argument("action", choices=["report", "list"])
+    feedback_cmd.add_argument("--job-id", type=int)
+    feedback_cmd.add_argument("--json", action="store_true", help="Print machine-readable output")
     dash = sub.add_parser(
         "dashboard", help="Run the local dashboard (127.0.0.1 only; makes no API requests)"
     )
@@ -164,6 +188,8 @@ def main(argv=None):
         matching,
         ranking,
         review,
+        override,
+        feedback_cmd,
         dash,
     ):
         item.add_argument("--config", type=Path, default=Path("config.toml"))
@@ -305,6 +331,57 @@ def main(argv=None):
                             limit=args.limit,
                         )
                         output = data if args.json else render_rank(data)
+                elif args.command == "feedback":
+                    if args.action == "report":
+                        data = fit_feedback.report(store.db)
+                        output = data if args.json else fit_feedback.render_report(data)
+                    else:
+                        entries = fit_feedback.history(store.db, args.job_id)
+                        output = (
+                            entries
+                            if args.json
+                            else "\n".join(
+                                f"#{e['id']} job {e['job_id']} {e['verdict']} "
+                                f"(tool said {e['final_status'] or 'no tag'})"
+                                for e in entries
+                            )
+                            or "No Good fit / Not for me picks yet."
+                        )
+                elif args.command == "override":
+                    if args.action == "propose":
+                        if not (args.job_id and args.blocker and args.quote and args.reason):
+                            raise ValueError(
+                                "override propose requires --job-id --blocker --quote --reason"
+                            )
+                        data = explain(store, settings.matching, args.job_id)
+                        final = data.get("final") or {}
+                        needed = blocker_overrides.BLOCKERS[args.blocker]
+                        if final.get("reason_code") != needed:
+                            raise ValueError(
+                                f"job {args.job_id} is not currently decided by {args.blocker}; "
+                                "there is nothing to override"
+                            )
+                        entries = [
+                            blocker_overrides.propose(
+                                store,
+                                args.job_id,
+                                args.blocker,
+                                args.quote,
+                                args.reason,
+                                args.proposed_by,
+                                data["assessment_id"],
+                            )
+                        ]
+                    elif args.action in {"approve", "reject"}:
+                        if args.override_id is None:
+                            raise ValueError(f"override {args.action} requires --override-id")
+                        status = "approved" if args.action == "approve" else "rejected"
+                        entries = [
+                            blocker_overrides.decide(store, args.override_id, status, args.note)
+                        ]
+                    else:
+                        entries = blocker_overrides.history(store, args.job_id)
+                    output = entries if args.json else blocker_overrides.render(entries)
                 elif args.command == "review":
                     if args.action == "add":
                         if args.job_id is None or not args.status:

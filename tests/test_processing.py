@@ -309,7 +309,19 @@ def test_cli_process_and_filter(tmp_path, capsys):
 
 
 @pytest.mark.parametrize(
-    "source", ["himalayas", "greenhouse", "ashby", "lever", "remotive", "arbeitnow"]
+    "source",
+    [
+        "himalayas",
+        "greenhouse",
+        "ashby",
+        "lever",
+        "remotive",
+        "arbeitnow",
+        "jobicy",
+        "remoteok",
+        "workingnomads",
+        "weworkremotely",
+    ],
 )
 def test_all_provider_models_are_supported(source, rows, make_collector):
     collector, _, _ = make_collector(source)

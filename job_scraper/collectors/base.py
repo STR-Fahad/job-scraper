@@ -120,7 +120,7 @@ class Collector(ABC):
             description=description if description is not None else text(description_html),
             raw=raw,
             workplace_type=workplace(self.config.source, raw),
-            attribution=self.config.source.capitalize(),
+            attribution=kwargs.pop("attribution", self.config.source.capitalize()),
             **kwargs,
         )
 

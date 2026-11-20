@@ -7,7 +7,18 @@ from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 from pydantic import BaseModel, ConfigDict, Field, HttpUrl, field_validator, model_validator
 
-Source = Literal["himalayas", "greenhouse", "ashby", "lever", "remotive", "arbeitnow"]
+Source = Literal[
+    "himalayas",
+    "greenhouse",
+    "ashby",
+    "lever",
+    "remotive",
+    "arbeitnow",
+    "jobicy",
+    "remoteok",
+    "workingnomads",
+    "weworkremotely",
+]
 
 
 def canonical_url(value: str) -> str:

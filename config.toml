@@ -65,3 +65,17 @@ company = "Spreetail"
 region = "global"
 page_size = 100
 max_pages = 100
+
+# Added 2026-11-18: public remote-job aggregators (JSON/RSS feeds; run at most once per 6 hours).
+# Remote OK and Jobicy ask for a link back; the source name and link are stored on every job.
+[[sources]]
+source = "jobicy"
+
+[[sources]]
+source = "remoteok"
+
+[[sources]]
+source = "workingnomads"
+
+[[sources]]
+source = "weworkremotely"

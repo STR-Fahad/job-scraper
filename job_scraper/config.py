@@ -36,6 +36,9 @@ class SourceConfig(BaseModel):
         if self.source == "himalayas":
             self.page_size = min(self.page_size, 20)
             self.cooldown_seconds = max(self.cooldown_seconds, 86400)
+        if self.source in {"jobicy", "remoteok", "workingnomads", "weworkremotely"}:
+            self.interval_seconds = max(self.interval_seconds, 5)
+            self.cooldown_seconds = max(self.cooldown_seconds, 21600)
         if self.source == "remotive":
             self.interval_seconds = max(self.interval_seconds, 31)
             self.cooldown_seconds = max(self.cooldown_seconds, 21600)

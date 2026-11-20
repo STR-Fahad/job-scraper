@@ -4,7 +4,7 @@ from .models import Compensation, Salary
 
 
 def workplace(source, raw):
-    if source in {"himalayas", "remotive"}:
+    if source in {"himalayas", "remotive", "jobicy", "remoteok", "workingnomads", "weworkremotely"}:
         return "remote"
     if source in {"ashby", "lever"}:
         value = str(raw.get("workplaceType") or "").lower().replace("-", "")

@@ -56,6 +56,7 @@ import re
 
 from .experience import scoped_years_text
 from .matching import HIGH_SCORE
+from .overrides import approved_blockers
 
 DECISION_VERSION = "final-v4"
 # A required total-experience minimum this many months above the approved experience is a
@@ -135,16 +136,17 @@ def _scoped_note(findings) -> str:
     return ""
 
 
-def hard_blocker(findings, requirement_ids) -> bool:
+def hard_blocker(findings, requirement_ids, *, skip_experience=False) -> bool:
     """True when one of the named requirements is a hard blocker: a stated hiring condition
-    (kind eligibility) or a total-experience minimum at least the limit above approved."""
+    (kind eligibility) or a total-experience minimum at least the limit above approved.
+    `skip_experience` ignores experience minimums (the user approved lifting that blocker)."""
     for item in findings:
         if item.get("job_evidence_id") not in requirement_ids:
             continue
         if item.get("kind") == "eligibility":
             return True
         view = _total_minimum(item)
-        if view and view["gap_months"] >= EXPERIENCE_GAP_INELIGIBLE_MONTHS:
+        if view and not skip_experience and view["gap_months"] >= EXPERIENCE_GAP_INELIGIBLE_MONTHS:
             return True
     return False
 
@@ -244,8 +246,13 @@ def _decide(row: dict) -> dict | None:
             row,
             "hard_blocker",
         )
+    approved = approved_blockers(row)
     gap = _experience_gap(row.get("findings", []))
-    if gap and gap["gap_months"] >= EXPERIENCE_GAP_INELIGIBLE_MONTHS:
+    if (
+        gap
+        and gap["gap_months"] >= EXPERIENCE_GAP_INELIGIBLE_MONTHS
+        and "experience_gap" not in approved
+    ):
         return _result(
             "INELIGIBLE",
             "experience_gap",
@@ -260,8 +267,19 @@ def _decide(row: dict) -> dict | None:
         return _result(status, code, detail, row)
     said = judgment["suggested"]
     why = f"Session judgment #{judgment['id']}: {judgment['summary']}"
+    blocking_ids = set(judgment["blocking_requirement_ids"])
+    if said == "INELIGIBLE" and (
+        "judgment_blocker" in approved
+        or (
+            "experience_gap" in approved
+            and not hard_blocker(row.get("findings", []), blocking_ids, skip_experience=True)
+        )
+    ):
+        # The user approved lifting this blocker: derive the tag from the remaining rules, as if
+        # the judgment had not found it. Nothing here makes a job ELIGIBLE by itself.
+        said = "UNVERIFIED"
     if said == "INELIGIBLE":
-        if not hard_blocker(row.get("findings", []), set(judgment["blocking_requirement_ids"])):
+        if not hard_blocker(row.get("findings", []), blocking_ids):
             # An older row, or one whose blocker is a small experience gap: not a hard blocker.
             return _result(
                 "UNVERIFIED",
@@ -296,9 +314,31 @@ def _decide(row: dict) -> dict | None:
     return _result("UNVERIFIED", "session_judgment_unverified", why, row, "session_judgment")
 
 
+def _lifted(row: dict) -> list[dict]:
+    """Approved overrides whose blocker is really present on this row (and so was lifted)."""
+    lifted = []
+    for blocker, entry in approved_blockers(row).items():
+        if blocker == "experience_gap":
+            gap = _experience_gap(row.get("findings", []))
+            present = bool(gap and gap["gap_months"] >= EXPERIENCE_GAP_INELIGIBLE_MONTHS)
+        else:
+            present = (row.get("judgment") or {}).get("suggested") == "INELIGIBLE"
+        if present:
+            lifted.append(entry)
+    return lifted
+
+
 def decide(row: dict) -> dict | None:
     """Decision for one ranking row, or None while it has no current assessment."""
     result = _decide(row)
     if result and result["status"] != "INELIGIBLE":
         result["detail"] += _scoped_note(row.get("findings", []))
+    lifted = _lifted(row) if result else []
+    if lifted:
+        result["detail"] += "".join(
+            f" Override approved by you (#{e['id']}, {e['blocker']}): {e['reason']}" for e in lifted
+        )
+        result["overrides_applied"] = [
+            {k: e[k] for k in ("id", "blocker", "quote", "reason")} for e in lifted
+        ]
     return result

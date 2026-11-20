@@ -19,7 +19,7 @@ Sort order (ascending key, so the first row is the best):
 
 import json
 
-from . import judge, reviews
+from . import judge, overrides, reviews
 from .decision import decide
 from .experience import compare, requirement_in_context
 from .matching import HIGH_SCORE, _job_input, _rule_hash, candidates, latest_profile
@@ -249,6 +249,7 @@ def build(store, config, *, include_history=False, model=None, job_id=None) -> l
         target = judged if r["model"].startswith(judge.MODEL_PREFIX) else stored
         target.setdefault(r["job_id"], []).append(r)
     manual = reviews.latest(store, reviews.fingerprints(store))
+    override_map = overrides.latest(store)
     output = []
     for item in queue:
         identity = item["job_id"]
@@ -312,6 +313,9 @@ def build(store, config, *, include_history=False, model=None, job_id=None) -> l
             row["flags"] = _flags(row)
         else:
             row["flags"] = []
+        row["overrides"] = overrides.annotate(override_map.get(identity), row["assessment_id"])
+        if any(e["effective"] == "proposed" for e in row["overrides"]):
+            row["flags"].append("override_proposed")
         row["recommendation"] = (
             "not_recommended_manual_restriction"
             if row["restricted"]
@@ -663,6 +667,7 @@ def _row_lines(row, number) -> list[str]:
         lines.append(
             f"     FINAL (Module 3): {final['status']} [{final['reason_code']}] {final['detail']}"
         )
+    lines += ["     " + text for text in _override_lines(row)]
     lines.append(
         f"     Module 2: {row['module2']['status']}"
         f"{' (stale)' if row['module2']['stale'] else ''} | manual review: "
@@ -721,6 +726,15 @@ def render_queue(data) -> str:
     return "\n".join(lines)
 
 
+def _override_lines(row) -> list[str]:
+    """One line per blocker-override proposal or decision (never changes the tag by itself)."""
+    return [
+        f"override {e['effective']}: {e['blocker']} (#{e['id']}, proposed by {e['proposed_by']}) "
+        f'- {e["reason"]} | quote: "{e["quote"][:120]}"'
+        for e in row.get("overrides", [])
+    ]
+
+
 def _final_line(data) -> list[str]:
     final = data.get("final")
     lines = (
@@ -728,6 +742,7 @@ def _final_line(data) -> list[str]:
         if final
         else []
     )
+    lines += _override_lines(data)
     judgment = data.get("judgment")
     if judgment:
         lines.append(

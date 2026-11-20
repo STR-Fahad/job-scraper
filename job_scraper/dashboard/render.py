@@ -15,6 +15,7 @@ NAV_MORE = (
     ("jobs", "/jobs", "Job Explorer"),
     ("rankings", "/rankings", "CV Matches & Rankings"),
     ("reviews", "/reviews", "Eligibility Review Queue"),
+    ("calibration", "/calibration", "Calibration"),
 )
 
 CSS = """
@@ -78,7 +79,7 @@ form.tools select{padding:9px 12px;border-radius:10px}form.tools button{padding:
 .tab.on .n{background:var(--okbg);color:var(--accent)}
 .job{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:start;background:var(--card);
 border:1px solid var(--line);border-radius:14px;margin-bottom:10px}
-.job details{grid-column:1;grid-row:1;min-width:0}.job form.apply{grid-column:2;grid-row:1;margin:0;padding:14px 16px 0 0}
+.job details{grid-column:1;grid-row:1;min-width:0}.job .acts{grid-column:2;grid-row:1;display:flex;flex-direction:column;gap:6px;padding:14px 16px 0 0}.job form.apply{margin:0}
 .job summary{display:flex;gap:14px;align-items:center;padding:14px 16px;cursor:pointer;list-style:none;
 color:var(--ink);border-radius:14px}.job summary::-webkit-details-marker{display:none}
 .job summary:hover{background:var(--neutralbg)}.job .main{flex:1;min-width:0}
@@ -95,7 +96,7 @@ color:var(--ink);border-radius:14px}.job summary::-webkit-details-marker{display
 .chip{font-size:.8rem;padding:3px 10px;border-radius:99px;background:var(--neutralbg);color:var(--mute)}
 .empty{text-align:center;color:var(--mute);padding:48px 0}
 @media (max-width:560px){.job .two{grid-template-columns:1fr}.job{grid-template-columns:1fr}
-.job form.apply{grid-column:1;grid-row:2;padding:0 16px 14px}}
+.job .acts{grid-column:1;grid-row:2;flex-direction:row;flex-wrap:wrap;padding:0 16px 14px}}
 @media (max-width:700px){main{padding:12px}.kv{grid-template-columns:1fr}table{display:block;overflow-x:auto}}
 """
 

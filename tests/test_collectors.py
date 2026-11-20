@@ -5,7 +5,19 @@ from job_scraper.http import CollectionError
 
 
 @pytest.mark.parametrize(
-    "source", ["himalayas", "greenhouse", "ashby", "lever", "remotive", "arbeitnow"]
+    "source",
+    [
+        "himalayas",
+        "greenhouse",
+        "ashby",
+        "lever",
+        "remotive",
+        "arbeitnow",
+        "jobicy",
+        "remoteok",
+        "workingnomads",
+        "weworkremotely",
+    ],
 )
 def test_normalization(source, rows, make_collector):
     collector, _, _ = make_collector(source)
@@ -209,3 +221,68 @@ def test_missing_source_identifier_is_invalid(rows, make_collector):
     collector, _, stats = make_collector("remotive", [{"jobs": [{**rows["remotive"], "id": None}]}])
     assert list(collector.collect()) == []
     assert stats.invalid == 1
+
+
+def test_jobicy_geo_is_split_and_level_kept(rows, make_collector):
+    collector, _, _ = make_collector("jobicy")
+    job = collector.normalize(rows["jobicy"])
+    assert job.location == ["Poland", "Portugal"]
+    assert job.restrictions == {"jobLevel": "Junior"}
+    assert job.attribution == "Jobicy" and str(job.attribution_url) == "https://jobicy.com/"
+    assert job.workplace_type == "remote"
+
+
+def test_remoteok_skips_the_legal_notice_and_credits_the_source(rows, make_collector):
+    legal = {"last_updated": 1, "legal": "API Terms of Service: link back"}
+    collector, _, stats = make_collector("remoteok", [[legal, rows["remoteok"]]])
+    jobs = list(collector.collect())
+    assert [j.source_id for j in jobs] == ["1"] and stats.fetched == 1
+    assert jobs[0].attribution == "Remote OK"
+
+
+def test_workingnomads_source_id_is_the_numeric_job_id(rows, make_collector):
+    collector, _, _ = make_collector("workingnomads")
+    assert collector.normalize(rows["workingnomads"]).source_id == "2027058"
+    rows["workingnomads"]["url"] = "https://www.workingnomads.com/job/go/abc"
+    assert collector.normalize(rows["workingnomads"]).source_id.endswith("/abc")
+
+
+RSS = """<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0"><channel><title>t</title>
+<item><title>Acme: Python Engineer</title><region>Latin America Only</region><country></country>
+<state></state><skills>Python</skills><category>Back-End</category><type>Full-Time</type>
+<description>&lt;p&gt;Full description&lt;/p&gt;</description>
+<link>https://weworkremotely.com/remote-jobs/acme-python</link>
+<guid>https://weworkremotely.com/remote-jobs/acme-python</guid>
+<pubDate>Mon, 16 Nov 2026 11:56:02 +0000</pubDate></item>
+<item><title>No company separator</title><link>https://weworkremotely.com/x</link></item>
+</channel></rss>"""
+
+
+def test_weworkremotely_parses_rss_and_counts_bad_items(make_collector):
+    def handler(request):
+        return httpx.Response(200, text=RSS)
+
+    collector, _, stats = make_collector("weworkremotely", handler=handler)
+    jobs = list(collector.collect())
+    # one valid item per feed; the item without "Company: Title" is counted invalid
+    assert {j.company for j in jobs} == {"Acme"}
+    assert jobs[0].location == ["Latin America Only"] and jobs[0].title == "Python Engineer"
+    assert stats.invalid >= 1
+
+
+def test_weworkremotely_refuses_dtd_feeds(make_collector):
+    bad = '<?xml version="1.0"?><!DOCTYPE r [<!ENTITY a "b">]><rss><channel/></rss>'
+    collector, _, _ = make_collector(
+        "weworkremotely", handler=lambda request: httpx.Response(200, text=bad)
+    )
+    with pytest.raises(CollectionError, match="DTD"):
+        list(collector.collect())
+
+
+@pytest.mark.parametrize("source", ["jobicy", "remoteok", "workingnomads", "weworkremotely"])
+def test_new_aggregates_are_paced_politely(source):
+    from job_scraper.config import SourceConfig
+
+    config = SourceConfig(source=source, interval_seconds=0.1, cooldown_seconds=0)
+    assert config.interval_seconds >= 5 and config.cooldown_seconds >= 21600
