@@ -2,6 +2,18 @@
 
 **Observed 2026-11-01 (Asia/Karachi); updated through Module 4 on 2026-11-04.** Recheck before acting; this is a snapshot, not a permanent count. See `PROJECT_HANDBOOK.md` for the architecture and rules.
 
+## 2026-11-24 — Remote OK and We Work Remotely removed; answers copy; override approved (commit pending hash below)
+
+| Item | Result |
+|---|---|
+| Sources | `remoteok` and `weworkremotely` set `enabled = false` in `config.toml`; they are no longer collected. The user's reason: the user works remotely and wanted those two aggregators gone |
+| Deletion | 271 jobs deleted (Remote OK 97, We Work Remotely 174; none also from another source, none tracked as applied) with 271 sources/URLs/classifications/lifecycle events, 89 saved verdicts and 813 classification-history rows. Verified backup first: `data/backups/jobs-pre-delete-sites-20261124T124325653220Z.sqlite3` (git-ignored). After: integrity ok, 0 foreign-key problems, 0 orphan assessments, 5,385 jobs; pool 1,122; at that time Eligible 9 / Ineligible 555 / Unverified 139. Saved verdict files under `work/judgments` stay on disk. `fit_feedback` is append-only (trigger), so 5 answers now refer to deleted jobs; reports still work |
+| Answers copy | `work/save_answers.py` (git-ignored) writes `data/answers/answers.sqlite3` (+ CSVs): every Good fit / Not for me answer with reasons, note, the tool's tag at the time and the job's title, company, source and URLs; also applications and their history; indexed by job, verdict, company, source and URL. 16 answer rows, 4 applications at the time. Re-run before any bulk deletion. `work/delete_sites.py` (git-ignored) was the one-off deletion script |
+| User activity | The user applied to Supabase, GitLab and Wise Pelican jobs on 2026-11-24 and changed the Canonical frontend job from Applied to Saved; Not for me notes covered removed postings, a paid site, mobile/SQL/infra roles |
+| Override | Judge proposal #1 for job 552 (company age read as a 10-year minimum) approved by the user as override #2; the job is now UNVERIFIED (leadership requirement not evidenced), not Eligible |
+| Verification | 969 tests passed with this config change; main database integrity ok. A judge session (`judge-continuous-3`) was writing at the same time |
+| Known limits | Deleted data is only recoverable from the backup; the answers copy is not synced automatically |
+
 ## 2026-11-20 — Wellness check and backup-connection fix (commit `2c19365`; tag `close-backup-connections`)
 
 | Item | Result |

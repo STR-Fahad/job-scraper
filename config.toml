@@ -73,9 +73,11 @@ source = "jobicy"
 
 [[sources]]
 source = "remoteok"
+enabled = false  # stopped on the user's instruction 2026-11-24
 
 [[sources]]
 source = "workingnomads"
 
 [[sources]]
 source = "weworkremotely"
+enabled = false  # stopped on the user's instruction 2026-11-24
