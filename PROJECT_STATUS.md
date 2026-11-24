@@ -2,7 +2,7 @@
 
 **Observed 2026-11-01 (Asia/Karachi); updated through Module 4 on 2026-11-04.** Recheck before acting; this is a snapshot, not a permanent count. See `PROJECT_HANDBOOK.md` for the architecture and rules.
 
-## 2026-11-24 — Link check for removed postings and 15 company boards (commit pending hash below)
+## 2026-11-24 — Link check for removed postings and 15 company boards (commit `f8dc528`; tag `link-check-and-company-boards`)
 
 | Item | Result |
 |---|---|
