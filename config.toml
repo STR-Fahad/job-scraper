@@ -81,3 +81,80 @@ source = "workingnomads"
 [[sources]]
 source = "weworkremotely"
 enabled = false  # stopped on the user's instruction 2026-11-24
+
+# Added 2026-11-24: company boards verified with a public read-only check (no authentication); remote-friendly employers.
+
+[[sources]]
+source = "greenhouse"
+board = "mozilla"
+company = "Mozilla"
+
+[[sources]]
+source = "greenhouse"
+board = "grafanalabs"
+company = "Grafana Labs"
+
+[[sources]]
+source = "greenhouse"
+board = "gitlab"
+company = "GitLab"
+
+[[sources]]
+source = "greenhouse"
+board = "fivetran"
+company = "Fivetran"
+
+[[sources]]
+source = "greenhouse"
+board = "coinbase"
+company = "Coinbase"
+
+[[sources]]
+source = "greenhouse"
+board = "customerio"
+company = "Customer.io"
+
+[[sources]]
+source = "greenhouse"
+board = "bitwarden"
+company = "Bitwarden"
+
+[[sources]]
+source = "greenhouse"
+board = "planetscale"
+company = "PlanetScale"
+
+[[sources]]
+source = "greenhouse"
+board = "wikimedia"
+company = "Wikimedia Foundation"
+
+[[sources]]
+source = "ashby"
+board = "temporal"
+company = "Temporal"
+
+[[sources]]
+source = "ashby"
+board = "1password"
+company = "1Password"
+
+[[sources]]
+source = "ashby"
+board = "render"
+company = "Render"
+
+[[sources]]
+source = "ashby"
+board = "railway"
+company = "Railway"
+
+[[sources]]
+source = "ashby"
+board = "posthog"
+company = "PostHog"
+
+[[sources]]
+source = "ashby"
+board = "clickhouse"
+company = "ClickHouse"

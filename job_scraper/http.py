@@ -4,6 +4,7 @@ import logging
 import math
 import random
 import time
+from dataclasses import dataclass
 from datetime import UTC
 from email.utils import parsedate_to_datetime
 from urllib.parse import urlsplit
@@ -15,6 +16,16 @@ logger = logging.getLogger(__name__)
 
 class CollectionError(RuntimeError):
     pass
+
+
+@dataclass(frozen=True)
+class Probe:
+    """One page response for the link check. Never raises for HTTP status codes."""
+
+    status: int | None
+    location: str | None = None
+    text: str = ""
+    error: str | None = None
 
 
 class HttpClient:
@@ -93,6 +104,49 @@ class HttpClient:
             )
             self.sleep(delay)
         raise AssertionError("unreachable")
+
+    def probe(self, url, *, headers=None, interval=2, max_chars=200_000) -> Probe:
+        """GET one page without following redirects and report what came back.
+
+        Uses the same host pacing, Retry-After handling and bounded retries as `get`, but a 404,
+        a redirect or a persistent 5xx is returned as data instead of raised. A transport failure
+        or a deferred host comes back with status None and an error name.
+        """
+        host = urlsplit(url).netloc
+        last = Probe(None, error="no_attempt")
+        for attempt in range(self.retries + 1):
+            wait = self.not_before.get(host, 0) - self.clock()
+            if self.cooldown_store:
+                wait = max(wait, self.cooldown_store.host_deadline(host) - self.wall_clock())
+            if wait > min(30, self.max_retry_delay):
+                return Probe(None, error="host_deferred")
+            if wait > 0:
+                self.sleep(wait)
+            remaining = self.last_request.get(host, -float("inf")) + interval - self.clock()
+            if remaining > 0:
+                self.sleep(remaining)
+            self.last_request[host] = self.clock()
+            try:
+                response = self.client.get(url, headers=headers)
+            except httpx.TransportError as exc:
+                last = Probe(None, error=type(exc).__name__)
+            else:
+                self.record_retry_after(host, response.headers.get("Retry-After"))
+                kind = response.headers.get("content-type", "")
+                text = ""
+                if response.status_code < 400 and ("text" in kind or "json" in kind or not kind):
+                    text = response.text[:max_chars]
+                last = Probe(response.status_code, response.headers.get("location"), text)
+                if response.status_code not in {408, 429, 500, 502, 503, 504}:
+                    return last
+            if attempt == self.retries:
+                return last
+            delay = min(self.max_retry_delay, 2**attempt + random.uniform(0, 0.5))
+            requested = self.not_before.get(host, 0) - self.clock()
+            if requested > min(30, self.max_retry_delay):
+                return last
+            self.sleep(max(delay, requested))
+        return last
 
     def record_retry_after(self, host, raw):
         if not raw:

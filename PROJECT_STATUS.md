@@ -2,6 +2,18 @@
 
 **Observed 2026-11-01 (Asia/Karachi); updated through Module 4 on 2026-11-04.** Recheck before acting; this is a snapshot, not a permanent count. See `PROJECT_HANDBOOK.md` for the architecture and rules.
 
+## 2026-11-24 — Link check for removed postings and 15 company boards (commit pending hash below)
+
+| Item | Result |
+|---|---|
+| Added | `job_scraper/linkcheck.py`, `HttpClient.probe` (returns a page response without raising for 404/redirects/5xx), the `check-links` command (dry run by default; `--apply`, `--limit`, `--source`, `--interval`, `--json`) and `tests/test_linkcheck.py` (47 tests). Rules are in the handbook |
+| Behavior | Checks each open source's `source_url`; REMOVED only on 404/410, a redirect to a generic board page or a closed marker; closes a source only after two REMOVED checks on different days (12 hours apart minimum); every result is a `lifecycle_events` row with the evidence; nothing is deleted; Module 2/3 rules and the judge are untouched; `apply` takes a verified backup first |
+| Real-data tests | Dry run on 150 real pages (nothing written): 114 live, 34 removed on the first check (30 Arbeitnow HTTP 410, 2 Remotive 404, 1 Ashby 404, 1 Greenhouse redirect to `?error=true`), 2 unknown (HTTP 403, Himalayas and Jobicy); four removed pages re-fetched by hand matched, and both postings the user had reported removed (ecosio, ElevenLabs) were found. Apply test on a COPY of the database with the clock moved 25 hours: day 1 recorded 11 removed first checks, day 2 closed those 11; integrity ok, 6,897 jobs kept. Each `--apply` run saves a full backup (about 500 MB), so the backup policy is still open |
+| Earlier dry run | `check-links --limit 12` (read-only, nothing written, 12 pages fetched): 12 checked, 6 live, 6 removed on the first check (HTTP 404 on Remotive, 410 on Arbeitnow, including job 552 Lemon.io). Himalayas answered 403 to all 15 checked in an earlier run, so those are UNKNOWN (the project never bypasses a block) |
+| Verification | Full suite **1016 passed** (also with `-W error::ResourceWarning`); Ruff check and format, `pip check` and `git diff --check` clean |
+| Boards added | Greenhouse: Mozilla, Grafana Labs, GitLab, Fivetran, Coinbase, Customer.io, Bitwarden, PlanetScale, Wikimedia; Ashby: Temporal, 1Password, Render, Railway, PostHog, ClickHouse. Collected with 0 errors (about 1,512 new jobs; database 6,897 jobs; verified backup `data/backups/jobs-pre-boards-20261124T125705Z.sqlite3`). Module 2 and judging have NOT run on them yet (the user wants to change rules first) |
+| Not verified | No `--apply` run on the real database yet (a collection run was holding the writer lock); the closed-marker phrases are not checked against live closed pages; Himalayas cannot be checked (403); no scheduled run |
+
 ## 2026-11-24 — Remote OK and We Work Remotely removed; answers copy; override approved (commit `ffa2d1d`; tag `disable-remoteok-weworkremotely`)
 
 | Item | Result |

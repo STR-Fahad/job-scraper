@@ -16,6 +16,8 @@ from .discovery import discover
 from .gemini import check_connection
 from .http import CollectionError, HttpClient
 from .judge import JudgmentError, export_packet, import_judgment
+from .linkcheck import check_links
+from .linkcheck import render as render_link_check
 from .matching import (
     analyze,
     approve_profile,
@@ -177,8 +179,24 @@ def main(argv=None):
         "--outdated", action="store_true", help="list: only reviews needing reverification"
     )
     review.add_argument("--json", action="store_true", help="Print machine-readable output")
+    links = sub.add_parser(
+        "check-links",
+        help="Check job posting pages for removed postings (dry run unless --apply)",
+    )
+    links.add_argument(
+        "--apply",
+        action="store_true",
+        help="Record the results and close sources with two removed checks on different days",
+    )
+    links.add_argument("--limit", type=positive_int, default=100, help="Most sources per run")
+    links.add_argument("--source", choices=sorted(COLLECTORS))
+    links.add_argument(
+        "--interval", type=float, default=2.0, help="Seconds between requests per host"
+    )
+    links.add_argument("--json", action="store_true", help="Print machine-readable output")
     for item in (
         discovery,
+        links,
         sources,
         jobs,
         migration,
@@ -208,6 +226,20 @@ def main(argv=None):
             from .dashboard.app import serve
 
             serve(settings.database, settings.matching, args.host, args.port)
+            return 0
+        if args.command == "check-links":
+            report = check_links(
+                settings,
+                apply=args.apply,
+                limit=args.limit,
+                source=args.source,
+                interval=max(1.0, args.interval),
+            )
+            print(
+                json.dumps(report, indent=2, default=str)
+                if args.json
+                else render_link_check(report)
+            )
             return 0
         if args.command != "collect":
             with Store(settings.database) as store:
