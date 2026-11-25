@@ -871,3 +871,52 @@ def test_years_tied_to_a_named_specialist_area_are_scoped_not_total():
     assert not scoped("2+ years in development")
     assert not scoped("5 years in data engineering")
     assert not scoped("3+ years in total")
+
+
+# ---- look-back windows are not experience minimums (company history boilerplate) -------------
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "Mozilla has shaped the internet for the better over the last 25 years.",
+        "Over the last 25 years we have grown to 5,000 people.",
+        "We shipped 40 releases in the past 12 months.",
+        "Our platform has doubled in size during the last 3 years.",
+        "Revenue grew steadily within the previous 5 years.",
+    ],
+)
+def test_a_look_back_window_is_not_an_experience_requirement(text):
+    from job_scraper.experience import parse_requirement
+
+    assert parse_requirement(text) is None
+
+
+@pytest.mark.parametrize(
+    ("text", "months"),
+    [
+        ("3 years of experience over the last 5 years", 36),
+        ("5+ years of experience in Python", 60),
+        ("At least 2 years of professional experience", 24),
+        ("Over 5 years of experience with distributed systems", 60),
+        ("Minimum 18 months of experience", 18),
+    ],
+)
+def test_real_experience_requirements_still_parse(text, months):
+    from job_scraper.experience import parse_requirement
+
+    assert parse_requirement(text).minimum_months == months
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "We are shaping the next 25 years of technology.",
+        "Plan for the coming 10 years of growth.",
+        "Our roadmap for the following 5 years is public.",
+    ],
+)
+def test_a_forward_looking_window_is_not_an_experience_requirement(text):
+    from job_scraper.experience import parse_requirement
+
+    assert parse_requirement(text) is None

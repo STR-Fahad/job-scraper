@@ -53,6 +53,12 @@ COMMITMENT_AFTER = re.compile(
     r"^\W*(?:of\W+)?(?:\w+\W+){0,5}?(?:commitments?|guarantees?|support\s+(?:window|lifecycle|period))\b",
     re.I,
 )
+# A time window, not an experience minimum: "shaped the internet for the better over the last 25
+# years", "shaping the next 25 years of technology", "in the past 12 months". Company boilerplate reads
+# like this.
+TIME_WINDOW_BEFORE = re.compile(
+    r"\bthe\s+(?:last|past|previous|preceding|next|coming|following)\s*$", re.I
+)
 MAXIMUM = re.compile(r"\b(?:at most|up to|maximum(?: of)?|no more than|under|less than)\s*$", re.I)
 PREFERRED = re.compile(
     r"\b(?:preferred|nice[- ]to[- ]have|desirable|bonus|ideally|a plus|not required|optional)\b",
@@ -150,6 +156,8 @@ def parse_requirement(text: str) -> Requirement | None:
             unit = hit["unit"].lower()
             after, before = text[hit.end() :], text[: hit.start("low")]
             if UNRELATED_AFTER.search(after) or COMMITMENT_AFTER.search(after):
+                continue
+            if TIME_WINDOW_BEFORE.search(before):
                 continue
             # Word and bracket forms ("five years", "[3+] years") need experience wording and
             # no time-frame wording, like month quantities; plain digit years keep their rule.

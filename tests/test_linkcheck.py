@@ -2,6 +2,7 @@
 
 import json
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -166,7 +167,7 @@ def build(tmp_path, count=3):
 
 @pytest.fixture(autouse=True)
 def no_ranking(monkeypatch):
-    monkeypatch.setattr(linkcheck, "_priorities", lambda db, config, path: {})
+    monkeypatch.setattr(linkcheck, "_priorities", lambda db, config, path: ({}, False))
 
 
 def rows(path, sql):
@@ -224,7 +225,9 @@ def test_limit_and_priority_order(tmp_path, monkeypatch):
     path, settings = build(tmp_path, count=3)
     ids = dict(rows(path, "SELECT source_id, job_id FROM job_sources"))
     monkeypatch.setattr(
-        linkcheck, "_priorities", lambda db, config, path: {ids["3"]: 0, ids["2"]: 1, ids["1"]: 2}
+        linkcheck,
+        "_priorities",
+        lambda db, config, path: ({ids["3"]: 0, ids["2"]: 1, ids["1"]: 2}, True),
     )
     http = FakeHttp()
     report = linkcheck.check_links(settings, http=http, now=DAY1, limit=2)
@@ -395,6 +398,7 @@ def test_cli_dry_run_by_default(tmp_path, capsys, monkeypatch):
             "mode": "apply" if kwargs["apply"] else "dry-run",
             "candidates": 0,
             "skipped_checked_within_12h": 0,
+            "skipped_ineligible_or_outside_pool": 0,
             "limit": kwargs["limit"],
             "not_checked_this_run": 0,
             "totals": {},
@@ -413,13 +417,243 @@ def test_cli_dry_run_by_default(tmp_path, capsys, monkeypatch):
     assert seen["apply"] is True and seen["limit"] == 5
 
 
-def test_priority_order_falls_back_when_the_writer_lock_is_busy(tmp_path):
+def test_priority_order_falls_back_when_the_writer_lock_is_busy(tmp_path, monkeypatch):
+    monkeypatch.setattr(linkcheck, "PRIORITY_TRIES", 1)
     import sqlite3
     from contextlib import closing
 
     path, settings = build(tmp_path, count=1)
     with Store(path), closing(sqlite3.connect(path)) as db:
-        assert ORIGINAL_PRIORITIES(db, settings.matching, path) == {}  # no judged jobs yet
+        assert ORIGINAL_PRIORITIES(db, settings.matching, path) == (
+            {},
+            False,
+        )  # lock busy, none judged
     # with no lock the ranking itself is attempted; a bad config must not stop the check
     with closing(sqlite3.connect(path)) as db:
-        assert ORIGINAL_PRIORITIES(db, None, path) == {}
+        assert ORIGINAL_PRIORITIES(db, None, path) == ({}, False)
+
+
+def test_ineligible_and_outside_pool_jobs_are_not_checked(tmp_path, monkeypatch):
+    path, settings = build(tmp_path, count=4)
+    ids = dict(rows(path, "SELECT source_id, job_id FROM job_sources"))
+    # 1 Eligible, 2 Unverified, 3 Ineligible, 4 outside the judging pool (not in the dict)
+    tiers = {ids["1"]: 0, ids["2"]: 1, ids["3"]: 3}
+    monkeypatch.setattr(linkcheck, "_priorities", lambda db, config, path: (tiers, True))
+    http = FakeHttp()
+    report = linkcheck.check_links(settings, http=http, now=DAY1)
+    assert sorted(u for u in http.requests if "/jobs/" in u) == [gone(1), gone(2)]
+    assert report["skipped_ineligible_or_outside_pool"] == 2
+    assert report["totals"]["checked"] == 2
+    everything = FakeHttp()
+    report = linkcheck.check_links(settings, http=everything, now=DAY1, include_ineligible=True)
+    assert report["totals"]["checked"] == 4 and report["skipped_ineligible_or_outside_pool"] == 0
+
+
+def test_when_the_ranking_is_unreadable_nothing_is_skipped(tmp_path, monkeypatch):
+    path, settings = build(tmp_path, count=2)
+    ids = dict(rows(path, "SELECT source_id, job_id FROM job_sources"))
+    monkeypatch.setattr(linkcheck, "_priorities", lambda db, config, path: ({ids["1"]: 3}, False))
+    report = linkcheck.check_links(settings, http=FakeHttp(), now=DAY1)
+    assert report["totals"]["checked"] == 2 and report["skipped_ineligible_or_outside_pool"] == 0
+
+
+# ---- exchange with a cloud runner ------------------------------------------------------------
+
+
+def export_of(settings, **kw):
+    return linkcheck.export_links(settings, now=DAY1, **kw)
+
+
+def test_export_lists_open_links_in_priority_order_without_private_fields(tmp_path, monkeypatch):
+    path, settings = build(tmp_path, count=4)
+    ids = dict(rows(path, "SELECT source_id, job_id FROM job_sources"))
+    tiers = {ids["1"]: 2, ids["2"]: 0, ids["3"]: 3}  # 4 is outside the pool, 3 is Ineligible
+    monkeypatch.setattr(linkcheck, "_priorities", lambda db, config, path: (tiers, True))
+    data = export_of(settings)
+    assert [i["source_id"] for i in data["items"]] == ["2", "1"]
+    assert set(data["items"][0]) == {"source", "board", "source_id", "url"}
+    assert data["skipped_ineligible_or_outside_pool"] == 2 and data["version"] == 1
+    assert len(export_of(settings, include_ineligible=True)["items"]) == 4
+
+
+def test_export_ignores_the_twelve_hour_rule(tmp_path):
+    path, settings = build(tmp_path, count=1)
+    linkcheck.check_links(settings, apply=True, http=FakeHttp(), now=DAY1)
+    assert len(export_of(settings)["items"]) == 1
+
+
+def test_check_export_writes_results_with_only_safe_evidence(tmp_path):
+    path, settings = build(tmp_path, count=3)
+    data = export_of(settings)
+    http = FakeHttp({gone(1): Probe(404), gone(2): Probe(503)})
+    summary = linkcheck.check_export(data, tmp_path / "results", http=http, now=DAY1)
+    assert summary["checked"] == 3 and summary["removed"] == 1 and summary["unknown"] == 1
+    saved = json.loads(Path(summary["file"]).read_text(encoding="utf-8"))
+    assert saved["checked_at"] == DAY1.isoformat() and saved["version"] == 1
+    removed = next(r for r in saved["results"] if r["verdict"] == "removed")
+    assert removed["reason"] == "http_404" and removed["evidence"]["http_status"] == 404
+    assert set(removed) == {"source", "board", "source_id", "verdict", "reason", "evidence"}
+    limited = linkcheck.check_export(data, tmp_path / "r2", http=FakeHttp(), now=DAY1, limit=1)
+    assert limited["checked"] == 1
+
+
+def test_check_export_refuses_an_unknown_export_format(tmp_path):
+    with pytest.raises(ValueError):
+        linkcheck.check_export({"version": 99, "items": []}, tmp_path, http=FakeHttp())
+    with pytest.raises(ValueError):
+        linkcheck.check_export({"version": 1}, tmp_path, http=FakeHttp())
+
+
+def test_the_bundled_tool_runs_without_the_rest_of_the_project(tmp_path):
+    import subprocess
+    import sys
+
+    bundle = tmp_path / "tool"
+    assert linkcheck.bundle_tool(bundle) == ["__init__.py", "http.py", "linkcheck.py"]
+    export = tmp_path / "export.json"
+    item = {"source": "greenhouse", "board": "a", "source_id": "1", "url": "http://127.0.0.1/x"}
+    export.write_text(json.dumps({"version": 1, "items": [item]}), encoding="utf-8")
+    done = subprocess.run(
+        [sys.executable, "-I", "-m", "job_scraper.linkcheck", str(export), str(tmp_path / "out")],
+        cwd=bundle,
+        capture_output=True,
+        text=True,
+        timeout=60,
+    )
+    assert done.returncode == 0, done.stderr
+    result = next((tmp_path / "out").glob("*.json"))
+    saved = json.loads(result.read_text(encoding="utf-8"))
+    assert saved["results"][0]["reason"] == "unusable_url"  # a private address is never fetched
+
+
+def result_file(folder, when, entries, name=None):
+    folder.mkdir(parents=True, exist_ok=True)
+    file = folder / (name or f"{when:%Y%m%dT%H%M%SZ}.json")
+    file.write_text(
+        json.dumps({"version": 1, "checked_at": when.isoformat(), "results": entries}),
+        encoding="utf-8",
+    )
+    return file
+
+
+def entry(source_id, verdict, reason="x", evidence=None, board="acme", source="greenhouse"):
+    return {
+        "source": source,
+        "board": board,
+        "source_id": source_id,
+        "verdict": verdict,
+        "reason": reason,
+        "evidence": evidence or {"http_status": 404, "url": gone(source_id)},
+    }
+
+
+def test_import_dry_run_writes_nothing_and_apply_follows_the_two_day_rule(tmp_path):
+    path, settings = build(tmp_path, count=2)
+    folder = tmp_path / "results"
+    both = [entry("1", "removed", "http_404"), entry("2", "live", "page_available")]
+    result_file(folder, DAY1, both)
+    dry = linkcheck.import_results(settings, [folder], apply=False, now=DAY1)
+    assert dry["mode"] == "dry-run" and dry["recorded"] == 2 and link_events(path) == []
+    first = linkcheck.import_results(settings, [folder], apply=True, now=DAY1)
+    assert first["summary"] == {"removed": 1, "live": 1} and states(path)["1"] == "active"
+    assert len(link_events(path)) == 2 and first["backup"]
+    result_file(folder, DAY1 + timedelta(days=1), [entry("1", "removed", "http_404")])
+    later = DAY1 + timedelta(days=2)
+    second = linkcheck.import_results(settings, [folder], apply=True, now=later)
+    assert second["summary"]["closed"] == 1 and second["summary"]["already_imported"] == 2
+    assert states(path) == {"1": "closed", "2": "active"}
+    sql = "SELECT closure_evidence FROM job_sources WHERE source_id='1'"
+    assert json.loads(rows(path, sql)[0][0])["reason"] == "link_check_removed_twice"
+    assert rows(path, "SELECT count(*) FROM jobs")[0][0] == 2  # nothing deleted
+
+
+def test_importing_the_same_files_again_changes_nothing(tmp_path):
+    path, settings = build(tmp_path, count=1)
+    folder = tmp_path / "results"
+    result_file(folder, DAY1, [entry("1", "removed", "http_404")])
+    linkcheck.import_results(settings, [folder], apply=True, now=DAY1)
+    count = len(link_events(path))
+    again = linkcheck.import_results(settings, [folder], apply=True, now=DAY1 + timedelta(hours=1))
+    assert again["recorded"] == 0 and again["backup"] == ""
+    assert len(link_events(path)) == count
+
+
+def test_several_days_of_results_imported_at_once_close_in_order(tmp_path):
+    path, settings = build(tmp_path, count=1)
+    folder = tmp_path / "results"
+    for day in range(3):
+        result_file(folder, DAY1 + timedelta(days=day), [entry("1", "removed", "http_404")])
+    later = DAY1 + timedelta(days=5)
+    report = linkcheck.import_results(settings, [folder], apply=True, now=later)
+    assert states(path)["1"] == "closed" and report["summary"]["closed"] == 1
+    assert report["summary"]["not_open"] == 1  # the third result arrived after it was closed
+
+
+def test_a_live_result_between_two_removed_ones_prevents_closing_on_import(tmp_path):
+    path, settings = build(tmp_path, count=1)
+    folder = tmp_path / "results"
+    for day, verdict in enumerate(["removed", "live", "removed"]):
+        result_file(folder, DAY1 + timedelta(days=day), [entry("1", verdict, "r")])
+    linkcheck.import_results(settings, [folder], apply=True, now=DAY1 + timedelta(days=4))
+    assert states(path)["1"] == "active"
+
+
+def test_invalid_and_foreign_results_are_ignored_not_trusted(tmp_path):
+    path, settings = build(tmp_path, count=1)
+    folder = tmp_path / "results"
+    odd = entry("1", "removed", "x", evidence={"http_status": 404, "evil": "<script>", "url": "u"})
+    result_file(
+        folder,
+        DAY1,
+        [
+            entry("1", "live", "ok"),
+            entry("1", "deleted", "bogus verdict"),
+            entry("9", "removed", "http_404"),  # not a job in this database
+            {"source": 5, "board": "a", "source_id": "1", "verdict": "removed", "reason": "x"},
+            "not a dict",
+            odd,
+        ],
+    )
+    (folder / "broken.json").write_text("{not json", encoding="utf-8")
+    naive = json.dumps({"version": 1, "checked_at": "2026-11-24T10:00:00", "results": []})
+    (folder / "naive.json").write_text(naive, encoding="utf-8")
+    report = linkcheck.import_results(settings, [folder], apply=True, now=DAY1)
+    assert report["invalid_files_or_entries"] == 5  # 3 bad entries, 2 bad files
+    assert report["summary"]["unknown_job"] == 1
+    stored = [json.loads(e[3]) for e in link_events(path)]
+    assert all("evil" not in s for s in stored)  # only whitelisted evidence is kept
+    assert "Link import (apply)" in linkcheck.render_import(report)
+
+
+def test_the_whole_exchange_round_trip(tmp_path):
+    path, settings = build(tmp_path, count=2)
+    data = export_of(settings)
+    http = FakeHttp({gone(1): Probe(410)})
+    out = tmp_path / "cloud" / "results"
+    linkcheck.check_export(data, out, http=http, now=DAY1)
+    linkcheck.check_export(data, out, http=http, now=DAY1 + timedelta(days=1))
+    later = DAY1 + timedelta(days=1, hours=1)
+    report = linkcheck.import_results(settings, [out], apply=True, now=later)
+    assert states(path) == {"1": "closed", "2": "active"}
+    assert report["summary"]["closed"] == 1
+
+
+def test_cli_export_and_import(tmp_path, capsys):
+    from job_scraper import cli
+
+    path, settings = build(tmp_path, count=2)
+    config = tmp_path / "config.toml"
+    config.write_text(
+        f'database = "{path.as_posix()}"\n[[sources]]\nsource="arbeitnow"', encoding="utf-8"
+    )
+    out = tmp_path / "x" / "export.json"
+    tool = tmp_path / "t"
+    base = ["link-export", "--config", str(config), "--out", str(out), "--bundle-dir", str(tool)]
+    assert cli.main(base) == 0
+    assert "Exported" in capsys.readouterr().out
+    data = json.loads(out.read_text(encoding="utf-8"))
+    assert len(data["items"]) == 2 and (tool / "job_scraper" / "http.py").exists()
+    folder = tmp_path / "results"
+    result_file(folder, DAY1, [entry("1", "live", "page_available")])
+    assert cli.main(["link-import", "--config", str(config), str(folder)]) == 0
+    assert "Link import (dry-run)" in capsys.readouterr().out

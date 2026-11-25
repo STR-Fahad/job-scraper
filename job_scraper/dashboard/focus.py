@@ -9,6 +9,8 @@ leaves the filters and waits under Applied, using the existing application track
 nothing here applies for you. Pakistan hiring stays the separate Module 2 status on each job.
 """
 
+from datetime import date
+
 from .. import feedback
 from . import data
 from .render import badge, e, human, link_url, pager, query
@@ -32,6 +34,42 @@ HELP = {
 }
 # A job leaves the decision filters once it is past "saved" or "planned".
 SUBMITTED = frozenset({"APPLIED", "SCREENING", "INTERVIEW", "OFFER", "REJECTED", "WITHDRAWN"})
+STATUS_ORDER = ("APPLIED", "SCREENING", "INTERVIEW", "OFFER", "REJECTED", "WITHDRAWN")
+
+
+def tally(applications: dict[int, dict], today: date | None = None) -> dict:
+    """How many jobs the user has applied to: in total, by status and in recent windows.
+
+    A job counts once it has left SAVED, whatever its current status (a rejection still was an
+    application). The windows use the application date; a missing date counts only in the total."""
+    today = today or date.today()
+    sent = [a for a in applications.values() if a["status"] in SUBMITTED]
+    ages = []
+    for a in sent:
+        try:
+            ages.append((today - date.fromisoformat(a["applied_on"])).days)
+        except (TypeError, ValueError):
+            continue
+    return {
+        "total": len(sent),
+        "by_status": {k: sum(a["status"] == k for a in sent) for k in STATUS_ORDER},
+        "last_7_days": sum(0 <= age < 7 for age in ages),
+        "last_30_days": sum(0 <= age < 30 for age in ages),
+        "saved": sum(a["status"] == "SAVED" for a in applications.values()),
+    }
+
+
+def tally_line(t: dict) -> str:
+    stages = ", ".join(f"{k.title()} {v}" for k, v in t["by_status"].items() if v)
+    line = (
+        f"{t['total']} applied in total · {t['last_7_days']} in the last 7 days · "
+        f"{t['last_30_days']} in the last 30 days"
+    )
+    return (
+        line + (f" · {stages}" if stages else "") + (f" · {t['saved']} saved" if t["saved"] else "")
+    )
+
+
 LIST_ITEMS = 5
 
 
@@ -143,6 +181,7 @@ def build(snapshot, applications: dict[int, dict], raw: dict, fit: dict | None =
         "items": items,
         "sources": sorted(sources),
         "not_judged": snapshot.counts["final"]["not_judged"],
+        "tally": tally(applications),
     }
 
 
@@ -391,8 +430,12 @@ def focus_page(result, csrf) -> str:
         if waiting
         else ""
     )
+    tally_html = (
+        f'<p class="sub"><b>{e(tally_line(result["tally"]))}</b></p>' if applied_tab else ""
+    )
     return (
         f'<p class="sub">{counts["ELIGIBLE"]} eligible to apply to · {e(HELP[p["d"]])}</p>'
+        + tally_html
         + _search(result)
         + _tabs(result)
         + cards

@@ -2,6 +2,26 @@
 
 **Observed 2026-11-01 (Asia/Karachi); updated through Module 4 on 2026-11-04.** Recheck before acting; this is a snapshot, not a permanent count. See `PROJECT_HANDBOOK.md` for the architecture and rules.
 
+## 2026-11-25 — First cloud results applied: 149 dead postings closed
+
+| Item | Result |
+|---|---|
+| Cloud runs | Two runs of the cloud routine (24 Nov 17:09 UTC test run and the scheduled 25 Nov 05:06 UTC run) each checked 767 links: 550 / 548 live, 149 / 151 removed (141-142 Arbeitnow HTTP 410, 5 Ashby 404, 2 Remotive 404, 1-2 Greenhouse redirect to the board page), 68 unknown (HTTP 403: 61 Arbeitnow, 6 Greenhouse, 1 Himalayas). No result flipped from removed to live |
+| Import | `link-import work/links-repo/results --apply` after a dry run: 1,534 results recorded, **149 sources closed** (removed on both days), 0 invalid, 0 unknown jobs; verified backup `data/backups/jobs-pre-linkcheck-20261125T163248482422Z.sqlite3` (git-ignored); integrity ok, 0 foreign-key problems, 6,897 jobs kept; none of the user's applied or saved jobs was closed. Effect: judging pool 1,360 to 1,211 jobs, awaiting a verdict 575 to 438, tool Eligible tag 9 to 7 (Nexoya and ElevenLabs, both rejected by the user, are gone) |
+| Schedule | The cloud routine now runs every second day at 04:00 Karachi (`0 23 */2 * *` UTC); the local daily scheduled task was deleted and its in-progress run stopped before it wrote anything |
+| Numbers | Tool Eligible tag 7; dashboard Eligible (to apply to) 4: three Canonical roles and Tether; applied 3 (Wise Pelican, Supabase, GitLab) plus 1 saved (Canonical frontend) |
+| Open | Importing the cloud results is a manual step; `export.json` must be refreshed with `link-export` after new collections; each `--apply` import saves a full backup (about 660 MB): the backup policy (only when something closes, or keep the newest 3) is undecided; 68 links stay unknown (403) |
+
+## 2026-11-24 — Cloud link-check exchange and experience-parser fix
+
+| Item | Result |
+|---|---|
+| Parser fix | `experience.py` `TIME_WINDOW_BEFORE`: a quantity right after "over/in/during/within/across the last/past/previous N years|months" is a look-back window, not an experience minimum. Extended the same day to forward-looking windows ("shaping the next 25 years of technology", "the coming / following N years"), which the judge found still parsed as a 25-year minimum (job 5502 was saved with that bogus item and showed INELIGIBLE experience_gap; it was sent back for a re-judge). Found when the judge had to skip about 55 Mozilla postings whose boilerplate says "...shaped the internet for the better over the last 25 years" (read as a 25-year requirement). Real requirements still parse ("3 years of experience over the last 5 years" = 36 months). 10 new tests; requirement and evidence version labels unchanged; `rank list` showed stale 0 after the change, so no saved verdict went stale. The judge helper `work/judgments/next_jobs.py` no longer counts "parser false positive" skips as done, so those jobs return to the plan |
+| Cloud exchange | `link-export` (writes the open posting links to a JSON file, optional `--bundle-dir` copy of `http.py` and `linkcheck.py`), a database-free cloud checker (`python -m job_scraper.linkcheck EXPORT RESULTS_DIR`) and `link-import` (dry run by default; validates results, records them with the original check times, closes a source only after two removed results on different days, dedupes re-imports, backs up before writing). 14 new tests. The database stays on the laptop; only public posting links go to the private repo `STR-Fahad/job-scraper-links` (exchange folder `work/links-repo`, git-ignored here) |
+| Cloud routine | "Job Scraper: daily link check (cloud)" (`trig_016uFCxxEoqDE8ChLuWdyQtv`), daily 05:00 UTC (10:00 Karachi); the Claude GitHub app was installed on the repo `job-scraper-links` only. The first test run was started 2026-11-24 17:09 UTC and its results had not been read when this was written; the local daily routine `job-scraper-link-check` is still enabled |
+| Verification | Full suite **1044 passed**; Ruff check and format, `pip check` and `git diff --check` clean at the last full run |
+| Not verified | The cloud run's reachability of the job sites and its push target; no `link-import` of real cloud results yet |
+
 ## 2026-11-24 — Link check for removed postings and 15 company boards (commit `f8dc528`; tag `link-check-and-company-boards`)
 
 | Item | Result |

@@ -584,6 +584,7 @@ def test_focus_page_lists_judged_jobs_by_filter_and_hides_applied_ones(env):
     assert "Software Engineer, AI Coding Tasks" not in after
     _, _, applied = call(app, "GET", "/?d=APPLIED")
     assert "Software Engineer, AI Coding Tasks" in applied and "Undo" in applied
+    assert "1 applied in total" in applied and "1 in the last 7 days" in applied
     # undo moves it back to Saved, so the filter shows it again
     post(app, f"/jobs/{assessed}/status", {"status": "SAVED", "next": "/?d=APPLIED"})
     app.cache.wait()
@@ -630,3 +631,35 @@ def test_navigation_keeps_other_pages_under_more(env):
     app, path, assessed = env
     _, _, body = call(app, "GET", "/applications")
     assert "More ▾" in body and 'href="/overview"' in body and 'href="/jobs"' in body
+
+
+def test_the_applied_tally_counts_submitted_jobs_by_status_and_recent_window():
+    from datetime import date
+
+    from job_scraper.dashboard.focus import tally, tally_line
+
+    today = date(2026, 11, 24)
+    apps = {
+        1: {"status": "APPLIED", "applied_on": "2026-11-24"},
+        2: {"status": "REJECTED", "applied_on": "2026-11-20"},
+        3: {"status": "INTERVIEW", "applied_on": "2026-11-01"},
+        4: {"status": "APPLIED", "applied_on": "2026-09-01"},
+        5: {"status": "APPLIED", "applied_on": None},
+        6: {"status": "SAVED", "applied_on": None},
+        7: {"status": "WITHDRAWN", "applied_on": "2026-11-18"},
+    }
+    t = tally(apps, today)
+    assert t["total"] == 6 and t["saved"] == 1  # a saved job is not an application
+    assert t["last_7_days"] == 3 and t["last_30_days"] == 4  # an undated one counts only in total
+    assert t["by_status"] == {
+        "APPLIED": 3,
+        "SCREENING": 0,
+        "INTERVIEW": 1,
+        "OFFER": 0,
+        "REJECTED": 1,
+        "WITHDRAWN": 1,
+    }
+    line = tally_line(t)
+    assert line.startswith("6 applied in total · 3 in the last 7 days · 4 in the last 30 days")
+    assert "Applied 3" in line and "Rejected 1" in line and "1 saved" in line
+    assert tally({}, today)["total"] == 0 and tally_line(tally({}, today)).startswith("0 applied")
