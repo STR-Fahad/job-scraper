@@ -2,7 +2,7 @@
 
 **Observed 2026-11-01 (Asia/Karachi); updated through Module 4 on 2026-11-04.** Recheck before acting; this is a snapshot, not a permanent count. See `PROJECT_HANDBOOK.md` for the architecture and rules.
 
-## 2026-11-25 — First cloud results applied: 149 dead postings closed
+## 2026-11-25 — First cloud results applied: 149 dead postings closed (code commit `255e515`; tag `cloud-link-check-and-parser-windows`)
 
 | Item | Result |
 |---|---|
