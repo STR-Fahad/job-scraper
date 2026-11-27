@@ -275,7 +275,9 @@ def _priorities(db, config, path) -> tuple[dict[int, int], bool]:
     return tiers, True
 
 
-def _candidates(db, config, path, source, now, include_ineligible=False, min_gap=MIN_GAP):
+def _candidates(
+    db, config, path, source, now, include_ineligible=False, min_gap=MIN_GAP, only_unknown=False
+):
     rows = db.execute(
         "SELECT source, board, source_id, job_id, lifecycle_state, "
         "json_extract(payload,'$.source_url') AS url, json_extract(payload,'$.title') AS title, "
@@ -283,14 +285,16 @@ def _candidates(db, config, path, source, now, include_ineligible=False, min_gap
         "WHERE lifecycle_state IN ('active','unknown')" + (" AND source=?" if source else ""),
         (source,) if source else (),
     ).fetchall()
-    last = {}
+    last, verdicts = {}, {}
     for key_source, board, source_id, checked_at, evidence in db.execute(
         "SELECT source, board, source_id, checked_at, evidence FROM lifecycle_events "
         "WHERE evidence LIKE '%\"link_check\"%' ORDER BY id"
     ):
         try:
-            if json.loads(evidence).get("kind") == "link_check":
+            data = json.loads(evidence)
+            if data.get("kind") == "link_check":
                 last[(key_source, board, source_id)] = checked_at
+                verdicts[(key_source, board, source_id)] = data.get("verdict")
         except ValueError:
             continue
     tiers, scoped = _priorities(db, config, path)
@@ -299,6 +303,8 @@ def _candidates(db, config, path, source, now, include_ineligible=False, min_gap
     for row in rows:
         key = (row["source"], row["board"], row["source_id"])
         tier = tiers.get(row["job_id"])
+        if only_unknown and verdicts.get(key) != UNKNOWN:
+            continue
         if scoped and (tier is None or tier == 3):
             skipped += 1
             continue
@@ -324,6 +330,23 @@ def _backup(store) -> str:
         if copy.execute("PRAGMA integrity_check").fetchone()[0] != "ok":
             raise ValueError("Link-check backup failed integrity check")
     return str(target)
+
+
+BACKUPS_KEPT = 3
+
+
+def _backup_if_closing(store, items) -> str:
+    """Back up only when a source is about to close; keep the newest few link-check backups."""
+    if not any(item["closes"] for item in items):
+        return ""
+    target = _backup(store)
+    path = store.db.execute("PRAGMA database_list").fetchone()[2]
+    if path:
+        stem = f"{Path(path).stem}-pre-linkcheck-"
+        old = sorted((Path(path).parent / "backups").glob(f"{stem}*.sqlite3"))
+        for stale in old[:-BACKUPS_KEPT]:
+            stale.unlink(missing_ok=True)
+    return target
 
 
 def _write(store, results, now) -> int:
@@ -381,6 +404,7 @@ def check_links(
     http=None,
     store_factory=None,
     include_ineligible=False,
+    only_unknown=False,
 ) -> dict:
     """Check active job sources and report. Writes only with apply=True (after a backup)."""
     from .dashboard.data import connect_readonly
@@ -401,7 +425,13 @@ def check_links(
     try:
         with closing(connect_readonly(settings.database)) as db:
             candidates, skipped_recent, skipped_ineligible = _candidates(
-                db, settings.matching, settings.database, source, now, include_ineligible
+                db,
+                settings.matching,
+                settings.database,
+                source,
+                now,
+                include_ineligible,
+                only_unknown=only_unknown,
             )
             robots = Robots(http, interval)
             for tier, job_id, key, row in candidates[:limit]:
@@ -436,7 +466,7 @@ def check_links(
                     raise
                 time.sleep(2)
         with store:
-            backup = _backup(store)
+            backup = _backup_if_closing(store, results)
             closed_written = _write(store, results, now)
     return _report(
         results,
@@ -763,7 +793,7 @@ def import_results(settings, paths, *, apply=False, store_factory=None, now=None
                     raise
                 time.sleep(2)
         with store:
-            backup = _backup(store)
+            backup = _backup_if_closing(store, items)
             _write(store, items, now)
     return {
         "mode": "apply" if apply else "dry-run",

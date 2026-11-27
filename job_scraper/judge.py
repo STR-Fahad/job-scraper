@@ -64,7 +64,7 @@ from .matching import (
     candidates,
 )
 from .processing import inspect_results
-from .requirements import ClassifiedRequirements, extract_requirements
+from .requirements import ClassifiedRequirements, RequirementItem, extract_requirements
 
 JUDGMENT_VERSION = "judgment-v1"
 LABELER = "claude-session"
@@ -94,7 +94,53 @@ RULES = [
     "ELIGIBLE: no unmet mandatory item. INELIGIBLE: only for a confirmed experience gap or a "
     "quoted unmet hiring condition (kinds include eligibility). Missing skills alone: UNVERIFIED.",
     "Pakistan hiring is a separate Module 2 status; do not claim an employer will hire there.",
+    "Items whose id starts with L come from the job's structured location and restriction "
+    "fields (section 'location'), not from the description. If one states a country or region "
+    "list, an on-site or hybrid place, or a time-zone condition that excludes a candidate in "
+    "Pakistan, record it as kinds [eligibility], verdict not_met and quote it in job_quote. A "
+    "plain remote or worldwide location, or a bare city with no stated condition, is "
+    "nonreq/not_applicable (a bare city alone is not proof of an office requirement). These "
+    "items are optional: leave one out only when it adds nothing.",
 ]
+
+LOCATION_PREFIX = "L"
+BROAD_TIMEZONE_COUNT = 20  # a list this long means "every time zone", not a restriction
+
+
+def location_items(content: dict) -> list[RequirementItem]:
+    """The job's location and restriction fields as quotable items (ids L001, L002).
+
+    Aggregator feeds state the hiring region only in these fields, so the judge could not
+    quote it. The items have no position in the description (offsets are 0) and are never
+    required: an old verdict file without them still validates."""
+    lines = []
+    places = [str(p).strip() for p in content.get("location") or [] if str(p).strip()]
+    if places:
+        lines.append("Location: " + ", ".join(places))
+    parts = []
+    for key, value in (content.get("restrictions") or {}).items():
+        if isinstance(value, (list, tuple)):
+            value = [v for v in value if v not in ("", None)]
+            if key.lower().startswith("timezone") and len(value) >= BROAD_TIMEZONE_COUNT:
+                continue
+            value = ", ".join(str(v) for v in value)
+        value = str(value).strip() if value is not None else ""
+        if value:
+            parts.append(f"{key}: {value}")
+    if parts:
+        lines.append("Restrictions: " + "; ".join(parts))
+    return [
+        RequirementItem(
+            id=f"{LOCATION_PREFIX}{number:03d}",
+            text=line,
+            section="location",
+            start=0,
+            end=0,
+            start_line=0,
+            end_line=0,
+        )
+        for number, line in enumerate(lines, 1)
+    ]
 
 
 class JudgmentError(ValueError):
@@ -113,7 +159,7 @@ class Evidence(BaseModel):
 
 class Verdict(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    requirement_id: str = Field(pattern=r"^R\d{3,}$")
+    requirement_id: str = Field(pattern=r"^[RL]\d{3,}$")
     kinds: list[Literal["req", "pref", "exp", "duty", "eligibility", "nonreq", "unresolved"]] = (
         Field(min_length=1, max_length=4)
     )
@@ -179,7 +225,7 @@ def _context(store, config: MatchingConfig, job_id: int) -> dict:
         "content": content,
         "people": people,
         "by_id": {segment.id: segment for segment in people},
-        "inventory": extract_requirements(content["description"]),
+        "inventory": extract_requirements(content["description"]) + location_items(content),
         "catalog": build_skill_catalog(people),
         "restricted": bool(manual and manual.get("effective_status") == "confirmed_restricted"),
     }
@@ -207,7 +253,13 @@ def export_packet(store, config: MatchingConfig, job_id: int, output: Path | Non
             "text": item.text,
             "technologies": [m.text for m in item.technologies if not m.negated],
         }
-        required = None if item.heading else requirement_in_context(item.text, item.text)
+        if item.section == "location":
+            entry["from_structured_field"] = True
+        required = (
+            None
+            if item.heading or item.section == "location"
+            else requirement_in_context(item.text, item.text)
+        )
         if required is not None:
             entry["python_experience_comparison"] = compare(required, months)
         items.append(entry)
@@ -221,8 +273,10 @@ def export_packet(store, config: MatchingConfig, job_id: int, output: Path | Non
         "requirements": [
             {
                 "requirement_id": item["id"],
-                "kinds": ["nonreq"] if item["heading"] else [],
-                "verdict": "not_applicable" if item["heading"] else "",
+                "kinds": ["nonreq"] if item["heading"] or item["section"] == "location" else [],
+                "verdict": (
+                    "not_applicable" if item["heading"] or item["section"] == "location" else ""
+                ),
                 "job_quote": "",
                 "cv_evidence": [{"evidence_id": "P-...", "quote": ""}],
                 "note": "",
@@ -292,9 +346,9 @@ def export_packet(store, config: MatchingConfig, job_id: int, output: Path | Non
     }
 
 
-def _contains(container: str, quote: str) -> bool:
+def _contains(container: str, quote: str, *, minimum: int = 12) -> bool:
     needle, haystack = normalize_space(quote), normalize_space(container)
-    return len(needle) >= min(12, len(haystack)) and needle in haystack
+    return len(needle) >= min(minimum, len(haystack)) and needle in haystack
 
 
 def _parse(path: Path) -> Judgment:
@@ -337,7 +391,9 @@ def _check_items(judgment: Judgment, ctx: dict) -> list[str]:
         if entry.verdict == "not_applicable":
             fail("not_applicable_only_for_nonreq_items")
             continue
-        if not entry.job_quote or not _contains(item.text, entry.job_quote):
+        # A location is short ("Remote UK"), so a quote of 3+ characters is enough there.
+        short = 3 if item.section == "location" else 12
+        if not entry.job_quote or not _contains(item.text, entry.job_quote, minimum=short):
             fail("job_quote_not_in_item")
         cited = []
         for ev in entry.cv_evidence:
@@ -370,7 +426,8 @@ def _check_items(judgment: Judgment, ctx: dict) -> list[str]:
                 )
             ):
                 fail("met_without_evidence_naming_the_technology", ", ".join(named[:3]))
-    missing = sorted(set(items) - seen)
+    # Location items (L...) are optional: a verdict made before they existed stays valid.
+    missing = sorted(i for i in set(items) - seen if items[i].section != "location")
     if missing:
         errors.append("missing_requirement_ids: " + ", ".join(missing[:10]))
     return errors
@@ -529,9 +586,13 @@ def validate(
                     ]
                 }
             )
+            judged = {v.requirement_id for v in judgment.requirements}
+            inventory = [
+                item for item in ctx["inventory"] if item.section != "location" or item.id in judged
+            ]
             result = _assessment(
                 classified,
-                ctx["inventory"],
+                inventory,
                 ctx["people"],
                 ctx["profile"],
                 ctx["catalog"],

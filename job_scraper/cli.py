@@ -162,10 +162,15 @@ def main(argv=None):
     feedback_cmd.add_argument("--job-id", type=int)
     feedback_cmd.add_argument("--json", action="store_true", help="Print machine-readable output")
     dash = sub.add_parser(
-        "dashboard", help="Run the local dashboard (127.0.0.1 only; makes no API requests)"
+        "dashboard",
+        help="Run the local dashboard (127.0.0.1 only; no Gemini calls). On start it syncs "
+        "dead-link checks in the background unless --no-sync",
     )
     dash.add_argument("--host", default="127.0.0.1", help="loopback address only")
     dash.add_argument("--port", type=int, default=8765)
+    dash.add_argument(
+        "--no-sync", action="store_true", help="Do not sync dead-link checks on start"
+    )
     review = sub.add_parser("review", help="View or record manual eligibility reviews")
     review.add_argument("action", choices=["list", "show", "add"])
     review.add_argument("--job-id", type=int)
@@ -249,7 +254,22 @@ def main(argv=None):
         if args.command == "dashboard":
             from .dashboard.app import serve
 
-            serve(settings.database, settings.matching, args.host, args.port)
+            on_start = None
+            if not args.no_sync:
+                import threading
+
+                from .linksync import run_and_log
+
+                def on_start(app):
+                    def note(line):
+                        app.sync_note = line
+
+                    app.sync_note = "Link sync is running in the background."
+                    threading.Thread(
+                        target=run_and_log, args=(settings,), kwargs={"say": note}, daemon=True
+                    ).start()
+
+            serve(settings.database, settings.matching, args.host, args.port, on_start=on_start)
             return 0
         if args.command == "link-export":
             data = export_links(

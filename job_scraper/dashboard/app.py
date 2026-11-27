@@ -42,6 +42,7 @@ class Dashboard:
         self.port = port
         self.csrf = secrets.token_urlsafe(24)
         self.cache = data.Cache(database, self.matching)
+        self.sync_note = ""
         self.hosts = {f"127.0.0.1:{port}", f"localhost:{port}", f"[::1]:{port}"}
 
     # --- infrastructure ---------------------------------------------------------------
@@ -119,6 +120,8 @@ class Dashboard:
             )
         elif self.cache.error:
             banner = f"Showing the previous data. Last refresh problem: {self.cache.error}"
+        elif self.sync_note:
+            banner = self.sync_note
         db = self.ro()
         try:
             if path == "/":
@@ -351,7 +354,7 @@ class _QuietHandler(WSGIRequestHandler):
         return
 
 
-def serve(database, matching, host="127.0.0.1", port=8765, ready=None):
+def serve(database, matching, host="127.0.0.1", port=8765, ready=None, on_start=None):
     if host not in LOOPBACK:
         raise ValueError("The dashboard only binds to a loopback address (127.0.0.1)")
     app = Dashboard(database, matching, port)
@@ -367,6 +370,8 @@ def serve(database, matching, host="127.0.0.1", port=8765, ready=None):
     print(f"Job Scraper dashboard: http://127.0.0.1:{port}/   (Ctrl+C to stop)", flush=True)
     if ready:
         ready(server, app)
+    if on_start:
+        on_start(app)
     try:
         server.serve_forever()
     except KeyboardInterrupt:

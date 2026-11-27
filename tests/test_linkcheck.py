@@ -284,8 +284,8 @@ def test_first_removed_check_is_recorded_but_does_not_close(tmp_path):
     evidence = json.loads(first[3])
     assert evidence["verdict"] == REMOVED and evidence["reason"] == "http_404"
     assert evidence["http_status"] == 404 and evidence["kind"] == "link_check"
-    backups = list((path.parent / "backups").glob("jobs-pre-linkcheck-*.sqlite3"))
-    assert len(backups) == 1
+    # nothing closed, so no backup is made
+    assert not list((path.parent / "backups").glob("jobs-pre-linkcheck-*.sqlite3"))
 
 
 def test_two_removed_checks_on_different_days_close_and_history_is_kept(tmp_path):
@@ -297,7 +297,7 @@ def test_two_removed_checks_on_different_days_close_and_history_is_kept(tmp_path
     assert again["skipped_checked_within_12h"] == 3 and again["totals"] == {}
     assert states(path)["1"] == "active"
     day2 = linkcheck.check_links(settings, apply=True, http=http, now=DAY1 + timedelta(days=1))
-    assert day2["closed_written"] == 1
+    assert day2["closed_written"] == 1 and day2["backup"]  # a closing run is backed up
     assert states(path) == {"1": "closed", "2": "active", "3": "active"}
     closed = rows(path, "SELECT closure_evidence FROM job_sources WHERE source_id='1'")[0][0]
     proof = json.loads(closed)
@@ -556,11 +556,12 @@ def test_import_dry_run_writes_nothing_and_apply_follows_the_two_day_rule(tmp_pa
     assert dry["mode"] == "dry-run" and dry["recorded"] == 2 and link_events(path) == []
     first = linkcheck.import_results(settings, [folder], apply=True, now=DAY1)
     assert first["summary"] == {"removed": 1, "live": 1} and states(path)["1"] == "active"
-    assert len(link_events(path)) == 2 and first["backup"]
+    assert len(link_events(path)) == 2 and first["backup"] == ""  # nothing closed: no backup
     result_file(folder, DAY1 + timedelta(days=1), [entry("1", "removed", "http_404")])
     later = DAY1 + timedelta(days=2)
     second = linkcheck.import_results(settings, [folder], apply=True, now=later)
     assert second["summary"]["closed"] == 1 and second["summary"]["already_imported"] == 2
+    assert second["backup"]
     assert states(path) == {"1": "closed", "2": "active"}
     sql = "SELECT closure_evidence FROM job_sources WHERE source_id='1'"
     assert json.loads(rows(path, sql)[0][0])["reason"] == "link_check_removed_twice"
@@ -657,3 +658,33 @@ def test_cli_export_and_import(tmp_path, capsys):
     result_file(folder, DAY1, [entry("1", "live", "page_available")])
     assert cli.main(["link-import", "--config", str(config), str(folder)]) == 0
     assert "Link import (dry-run)" in capsys.readouterr().out
+
+
+# ---- unknown-only re-check and the backup policy ----------------------------------------------
+
+
+def test_only_unknown_rechecks_the_sources_whose_last_check_was_unknown(tmp_path):
+    path, settings = build(tmp_path, count=3)
+    blocked = FakeHttp({gone(1): Probe(403), gone(2): Probe(403)})
+    linkcheck.check_links(settings, apply=True, http=blocked, now=DAY1)
+    later = DAY1 + timedelta(days=1)
+    http = FakeHttp({gone(1): Probe(410)})  # the laptop can see what the cloud could not
+    report = linkcheck.check_links(settings, apply=True, http=http, now=later, only_unknown=True)
+    # sources 1 and 2 were unknown; source 3 was live and is left alone
+    assert report["totals"]["checked"] == 2
+    assert report["totals"]["removed_first_check"] == 1 and report["totals"]["live"] == 1
+    assert states(path) == {"1": "active", "2": "active", "3": "active"}
+
+
+def test_backups_are_kept_to_the_newest_few(tmp_path):
+    path, settings = build(tmp_path, count=1)
+    folder = path.parent / "backups"
+    folder.mkdir(exist_ok=True)
+    for day in range(1, 6):
+        (folder / f"jobs-pre-linkcheck-2026010{day}T000000000000Z.sqlite3").write_text("old")
+    http = FakeHttp({gone(1): Probe(404)})
+    linkcheck.check_links(settings, apply=True, http=http, now=DAY1)
+    linkcheck.check_links(settings, apply=True, http=http, now=DAY1 + timedelta(days=1))
+    kept = sorted(folder.glob("jobs-pre-linkcheck-*.sqlite3"))
+    assert len(kept) == linkcheck.BACKUPS_KEPT
+    assert kept[0].name.startswith("jobs-pre-linkcheck-20260104")

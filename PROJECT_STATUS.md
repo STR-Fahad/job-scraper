@@ -2,6 +2,25 @@
 
 **Observed 2026-11-01 (Asia/Karachi); updated through Module 4 on 2026-11-04.** Recheck before acting; this is a snapshot, not a permanent count. See `PROJECT_HANDBOOK.md` for the architecture and rules.
 
+## 2026-11-27 — Link sync on dashboard start (uncommitted)
+
+| Item | Result |
+|---|---|
+| Change | New `job_scraper/linksync.py`: when the dashboard starts it runs in the background `git pull --rebase` in `work/links-repo`, `link-import --apply`, a laptop re-check of only the sources whose last link check was "unknown" (`check_links(only_unknown=True)`), then a refreshed `export.json` committed and pushed. Each step is best-effort and logged to `data/link_sync.log`; the dashboard banner shows a one-line result. `dashboard --no-sync` turns it off. Link-check backups are now made only when a source is about to close, and the newest 3 are kept (`BACKUPS_KEPT`) |
+| Why | The cloud checker is blocked (HTTP 403) on `arbeitnow.co.uk`; the same pages return 410 from the laptop. Jobs the user marked "removed" in the dashboard sat in Unverified because the cloud only said "unknown" |
+| Verification | Full suite **1064 passed**; Ruff and `git diff --check` clean. A start from the user's Terminal pulled correctly; an export committed but not pushed by an earlier start is now pushed on the next start. Tests use a real git repo with a local bare origin. Live start (run from the assistant's shell): re-check of unknowns checked 63, 41 live, 1 first removed check, **20 closed**; the pull and push failed there because that shell's GitHub login is a different account (the repo was not found), so the export is committed locally and unpushed |
+| Not verified | A start from the user's own terminal (their GitHub login) pulling and pushing; the rebase pull was added after that live start and is covered only by the unit tests |
+
+## 2026-11-25 — Judge can quote the location field (uncommitted)
+
+| Item | Result |
+|---|---|
+| Change | `judge.py` (`location_items`, packet and validation) and `requirements.py` (id pattern `[RL]\d{3,}` and the location exemption from `restriction_discarded`); 11 new tests in `tests/test_judge.py`. Built and tested in a scratch clone first, then copied in. Details in the handbook |
+| Why | Aggregator and board feeds state the hiring region only in the location field ("Remote Canada", "USA - New York", "United Kingdom (Remote)"), so the judge could not quote it and returned Unverified (`remote_region_condition_unclear`) |
+| Verification | Full suite **1055 passed**; Ruff, `pip check`, `git diff --check` clean. On a COPY of the database: 40 of the judge's existing verdict files still validate; real packets show `L001` for Arbeitnow cities, Greenhouse "Remote Canada" and a multi-city Ashby list; 8 real judged jobs imported with a location condition and became INELIGIBLE (`session_judgment_ineligible`); adding nonreq location items left the score, findings and ceiling of 8 real judged jobs (scores 9-25) unchanged. A first run showed "Remote UK" (9 characters) rejected by the 12-character quote rule, fixed by allowing 3 characters for location items |
+| Effect on saved data | None: no saved verdict, fingerprint or rule hash changed; judged jobs are not re-judged automatically. 60 of the 130 current Unverified jobs have a location field and a location or region reason code from the judge and are candidates for a re-judge (the user decides) |
+| Not verified | The judge session has only just been told to use the new items, so no real verdict with a location item has been saved in the live database yet; a re-judge of the 60 has not been run |
+
 ## 2026-11-25 — First cloud results applied: 149 dead postings closed (code commit `255e515`; tag `cloud-link-check-and-parser-windows`)
 
 | Item | Result |

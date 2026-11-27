@@ -220,7 +220,7 @@ class ItemPart(BaseModel):
 
 class ItemClassification(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    requirement_id: str = Field(pattern=r"^R\d{3,}$")
+    requirement_id: str = Field(pattern=r"^[RL]\d{3,}$")
     parts: list[ItemPart] = Field(min_length=1)
 
 
@@ -422,10 +422,14 @@ def resolve_classifications(
             raise fail(field, "preferred_marked_required")
         if minimum_months(item.text) is not None and "exp" not in kinds:
             raise fail(field, "experience_minimum_misclassified")
+        # Items from the structured location fields (section "location") say where the job is
+        # based, so plain "Remote" or a bare city is legitimately nonreq; the judge quotes a
+        # real condition as eligibility, and Module 2 already screens region lists.
         if (
             restriction_like(item.text)
             and "nonreq" in kinds
             and not item.heading
+            and item.section != "location"
             and not discardable_location_text(item.text)
         ):
             raise fail(field, "restriction_discarded")

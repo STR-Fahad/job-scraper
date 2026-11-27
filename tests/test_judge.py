@@ -108,7 +108,11 @@ def _verdict(packet, decision="ELIGIBLE"):
     for item in packet["requirements"]:
         base = {"requirement_id": item["id"], "job_quote": "", "cv_evidence": [], "note": ""}
         text = item["text"]
-        if item["heading"] or text.startswith(("About the role", "We are", "Ignore all")):
+        if (
+            item["heading"]
+            or item.get("from_structured_field")
+            or text.startswith(("About the role", "We are", "Ignore all"))
+        ):
             entries.append({**base, "kinds": ["nonreq"], "verdict": "not_applicable"})
         elif text.startswith("Build and maintain"):
             entries.append(
@@ -659,3 +663,200 @@ def test_carry_over_never_accepts_an_unknown_profile_or_fabricated_evidence(stor
     with pytest.raises(JudgmentError) as caught:
         import_judgment(store, CONFIG, _write(tmp_path, fabricated, "f.json"), carry_over=True)
     assert "cv_quote_not_in_segment" in str(caught.value) and _rows(store) == before
+
+
+# ---- location and restriction fields as quotable items ---------------------------------------
+
+
+def _located_world(store, location, restrictions=None, description=DESCRIPTION):
+    job = _job("loc", description).model_copy(
+        update={"location": location, "restrictions": restrictions or {}}
+    )
+    store.upsert(job)
+    return _world(store, other=DESCRIPTION)["loc"]
+
+
+def _located_verdict(packet, decision="UNVERIFIED", location_entry=None, drop_location=False):
+    """The honest description verdict plus an entry for every location item."""
+    data = _verdict(packet, decision="UNVERIFIED")
+    data["overall"]["decision"] = decision
+    for entry in data["requirements"]:
+        if entry["requirement_id"].startswith("L"):
+            if location_entry is not None and entry["requirement_id"] == "L001":
+                entry.update(location_entry)
+    if drop_location:
+        data["requirements"] = [
+            e for e in data["requirements"] if not e["requirement_id"].startswith("L")
+        ]
+    return data
+
+
+def test_location_items_come_from_the_structured_fields():
+    from job_scraper.judge import location_items
+
+    both = {
+        "location": ["CET (+/- 3 hours)", " "],
+        "restrictions": {"candidate_required_location": "Europe", "empty": "", "none": None},
+    }
+    items = location_items(both)
+    assert [(i.id, i.text, i.section) for i in items] == [
+        ("L001", "Location: CET (+/- 3 hours)", "location"),
+        ("L002", "Restrictions: candidate_required_location: Europe", "location"),
+    ]
+    assert location_items({"location": ["Worldwide"]})[0].text == "Location: Worldwide"
+    assert location_items({"location": [], "restrictions": {}}) == []
+    assert location_items({}) == []
+    every_zone = {"restrictions": {"timezoneRestrictions": list(range(-11, 14)), "x": []}}
+    assert location_items(every_zone) == []  # "every time zone" is not a restriction
+    few = {"restrictions": {"timezoneRestrictions": [0, 1, 2]}}
+    assert location_items(few)[0].text == "Restrictions: timezoneRestrictions: 0, 1, 2"
+
+
+def test_the_packet_offers_location_items_as_nonreq_by_default(store, tmp_path):
+    job_id = _located_world(store, ["CET (+/- 3 hours)"], {"team_note": "two hiring time zones"})
+    packet = _packet(store, job_id, tmp_path)
+    located = [r for r in packet["requirements"] if r["id"].startswith("L")]
+    assert [r["id"] for r in located] == ["L001", "L002"]
+    assert all(r["section"] == "location" and r["from_structured_field"] for r in located)
+    assert all("python_experience_comparison" not in r for r in located)
+    template = {t["requirement_id"]: t for t in packet["verdict_template"]["requirements"]}
+    assert template["L001"]["kinds"] == ["nonreq"]
+    assert template["L001"]["verdict"] == "not_applicable"
+    assert any("starts with L" in rule for rule in packet["rules"])
+    plain = _packet(store, _world_ids(store)["other"], tmp_path)
+    assert not [r for r in plain["requirements"] if r["id"].startswith("L")]
+
+
+def _world_ids(store):
+    return {
+        row["source_id"]: row["job_id"]
+        for row in store.db.execute("SELECT source_id, job_id FROM job_sources")
+    }
+
+
+def test_a_location_condition_can_make_a_judgment_ineligible(store, tmp_path):
+    job_id = _located_world(store, ["CET (+/- 3 hours)"])
+    packet = _packet(store, job_id, tmp_path)
+    verdict = _located_verdict(
+        packet,
+        decision="INELIGIBLE",
+        location_entry={
+            "kinds": ["eligibility"],
+            "verdict": "not_met",
+            "job_quote": "CET (+/- 3 hours)",
+        },
+    )
+    verdict["overall"]["reason_codes"] = ["location_residency_condition"]
+    verdict["overall"]["blocking_requirement_ids"] = ["L001"]
+    done = import_judgment(store, CONFIG, _write(tmp_path, verdict))
+    assert done["saved"] and done["suggested_decision"] == "INELIGIBLE"
+    assert done["effective_final_decision"]["status"] == "INELIGIBLE"
+    saved = json.loads(
+        store.db.execute("SELECT result FROM ai_assessments ORDER BY id DESC").fetchone()[0]
+    )
+    assert any(f["job_evidence_id"] == "L001" for f in saved["referenced_findings"])
+
+
+def test_a_plain_remote_location_is_nonreq_and_changes_nothing(store, tmp_path):
+    job_id = _located_world(store, ["Worldwide"])
+    packet = _packet(store, job_id, tmp_path)
+    done = import_judgment(store, CONFIG, _write(tmp_path, _located_verdict(packet, "ELIGIBLE")))
+    assert done["saved"] and done["effective_final_decision"]["status"] == "ELIGIBLE"
+
+
+def test_a_bare_remote_item_is_not_rejected_as_a_discarded_restriction(store, tmp_path):
+    job_id = _located_world(store, ["Remote"])
+    packet = _packet(store, job_id, tmp_path)
+    done = import_judgment(store, CONFIG, _write(tmp_path, _located_verdict(packet, "ELIGIBLE")))
+    assert done["saved"]
+
+
+def test_the_location_quote_must_come_from_the_item_itself(store, tmp_path):
+    job_id = _located_world(store, ["CET (+/- 3 hours)"])
+    packet = _packet(store, job_id, tmp_path)
+    verdict = _located_verdict(
+        packet,
+        decision="INELIGIBLE",
+        location_entry={
+            "kinds": ["eligibility"],
+            "verdict": "not_met",
+            "job_quote": "Candidates must live in Germany",
+        },
+    )
+    verdict["overall"]["blocking_requirement_ids"] = ["L001"]
+    reasons = _reasons(store, _write(tmp_path, verdict))
+    assert "L001: job_quote_not_in_item" in reasons
+
+
+def test_a_location_item_cannot_cite_cv_evidence_when_marked_nonreq(store, tmp_path):
+    job_id = _located_world(store, ["Worldwide"])
+    packet = _packet(store, job_id, tmp_path)
+    cv = _segment(packet, "Python REST APIs", "experience[")
+    verdict = _located_verdict(
+        packet, location_entry={"cv_evidence": [{"evidence_id": cv["id"], "quote": "Python"}]}
+    )
+    assert "L001: nonreq_item_cannot_cite_cv_evidence" in _reasons(store, _write(tmp_path, verdict))
+
+
+def test_location_items_are_optional_so_older_verdicts_still_import(store, tmp_path):
+    job_id = _located_world(store, ["CET (+/- 3 hours)"])
+    packet = _packet(store, job_id, tmp_path)
+    older = _located_verdict(packet, "ELIGIBLE", drop_location=True)
+    assert not any(e["requirement_id"].startswith("L") for e in older["requirements"])
+    done = import_judgment(store, CONFIG, _write(tmp_path, older))
+    assert done["saved"]
+    saved = json.loads(
+        store.db.execute("SELECT result FROM ai_assessments ORDER BY id DESC").fetchone()[0]
+    )
+    assert not any(f["job_evidence_id"].startswith("L") for f in saved["referenced_findings"])
+
+
+def test_a_made_up_location_item_id_is_rejected(store, tmp_path):
+    job_id = _located_world(store, ["Worldwide"])
+    packet = _packet(store, job_id, tmp_path)
+    verdict = _located_verdict(packet, "ELIGIBLE")
+    verdict["requirements"].append(
+        {
+            "requirement_id": "L009",
+            "kinds": ["nonreq"],
+            "verdict": "not_applicable",
+            "job_quote": "",
+            "cv_evidence": [],
+            "note": "",
+        }
+    )
+    assert "L009: unknown_requirement_id" in _reasons(store, _write(tmp_path, verdict))
+
+
+def test_an_unchanged_job_keeps_its_saved_judgment_current_after_this_feature(store, tmp_path):
+    """The job fingerprint and rule hash do not depend on the new items, so nothing goes stale."""
+    ids = _world(store, a=DESCRIPTION)
+    packet = _packet(store, ids["a"], tmp_path)
+    import_judgment(store, CONFIG, _write(tmp_path, _verdict(packet)))
+    rows = ranking.build(store, CONFIG)
+    assert next(r for r in rows if r["job_id"] == ids["a"])["assessment_status"] == "current"
+
+
+def test_a_short_location_can_be_quoted_in_part(store, tmp_path):
+    job_id = _located_world(store, ["CET (+/- 3 hours)"])
+    packet = _packet(store, job_id, tmp_path)
+    verdict = _located_verdict(
+        packet,
+        decision="INELIGIBLE",
+        location_entry={"kinds": ["eligibility"], "verdict": "not_met", "job_quote": "CET"},
+    )
+    verdict["overall"]["blocking_requirement_ids"] = ["L001"]
+    assert import_judgment(store, CONFIG, _write(tmp_path, verdict))["saved"]
+    too_short = _located_verdict(
+        packet,
+        decision="INELIGIBLE",
+        location_entry={"kinds": ["eligibility"], "verdict": "not_met", "job_quote": "C"},
+    )
+    too_short["overall"]["blocking_requirement_ids"] = ["L001"]
+    assert "L001: job_quote_not_in_item" in _reasons(store, _write(tmp_path, too_short, "b.json"))
+    # a description item still needs the long quote
+    short_desc = _verdict(packet)
+    for entry in short_desc["requirements"]:
+        if entry["requirement_id"] != "L001" and entry["job_quote"] == "Python":
+            entry["job_quote"] = "Pyt"
+    assert "job_quote_not_in_item" in _reasons(store, _write(tmp_path, short_desc, "c.json"))
