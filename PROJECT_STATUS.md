@@ -2,7 +2,7 @@
 
 **Observed 2026-11-01 (Asia/Karachi); updated through Module 4 on 2026-11-04.** Recheck before acting; this is a snapshot, not a permanent count. See `PROJECT_HANDBOOK.md` for the architecture and rules.
 
-## 2026-11-27 — Link sync on dashboard start (uncommitted)
+## 2026-11-27 — Link sync on dashboard start (code commit `8655988`; tag `judge-location-items-and-link-sync`)
 
 | Item | Result |
 |---|---|
@@ -11,7 +11,7 @@
 | Verification | Full suite **1064 passed**; Ruff and `git diff --check` clean. A start from the user's Terminal pulled correctly; an export committed but not pushed by an earlier start is now pushed on the next start. Tests use a real git repo with a local bare origin. Live start (run from the assistant's shell): re-check of unknowns checked 63, 41 live, 1 first removed check, **20 closed**; the pull and push failed there because that shell's GitHub login is a different account (the repo was not found), so the export is committed locally and unpushed |
 | Not verified | A start from the user's own terminal (their GitHub login) pulling and pushing; the rebase pull was added after that live start and is covered only by the unit tests |
 
-## 2026-11-25 — Judge can quote the location field (uncommitted)
+## 2026-11-25 — Judge can quote the location field (code commit `8655988`; tag `judge-location-items-and-link-sync`)
 
 | Item | Result |
 |---|---|
