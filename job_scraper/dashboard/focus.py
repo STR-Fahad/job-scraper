@@ -12,21 +12,26 @@ nothing here applies for you. Pakistan hiring stays the separate Module 2 status
 from datetime import date
 
 from .. import feedback
+from ..decision import SENIOR_TITLE
 from . import data
 from .render import badge, e, human, link_url, pager, query
 
-TABS = ("REVIEW", "ELIGIBLE", "UNVERIFIED", "INELIGIBLE")
+TABS = ("REVIEW", "ELIGIBLE", "UNVERIFIED", "TOO_SENIOR", "INELIGIBLE")
 REVIEW_CODE = "good_enough_fit"
 LABELS = {
     "REVIEW": "To review",
     "ELIGIBLE": "Eligible",
     "UNVERIFIED": "Unverified",
+    "TOO_SENIOR": "Too senior",
     "INELIGIBLE": "Ineligible",
     "APPLIED": "Applied",
 }
 HELP = {
     "ELIGIBLE": "Worth applying to: your CV supports the core of the role and nothing rules it out.",
     "UNVERIFIED": "Not settled either way. Often the CV does not show the main skill, which is not a rejection.",
+    "TOO_SENIOR": "Unverified jobs whose title says senior, staff, lead, principal, manager, "
+    "architect or head. Your CV shows limited professional experience, so they are set apart from "
+    "Unverified. The tag is unchanged; a Good fit pick still moves a job to Eligible.",
     "INELIGIBLE": "A hard blocker was found, such as an experience minimum far above yours.",
     "REVIEW": "The tool says these are good enough to apply to, but some evidence is only partial. "
     "Say Good fit to move a job to Eligible, or Not for me to move it to Ineligible.",
@@ -132,6 +137,8 @@ def build(snapshot, applications: dict[int, dict], raw: dict, fit: dict | None =
             return "INELIGIBLE"
         if r["final_status"] == "ELIGIBLE" and r.get("final_code") == REVIEW_CODE:
             return "REVIEW"
+        if r["final_status"] == "UNVERIFIED" and SENIOR_TITLE.search(r["title"] or ""):
+            return "TOO_SENIOR"
         return r["final_status"]
 
     open_jobs = [

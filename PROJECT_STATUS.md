@@ -2,6 +2,15 @@
 
 **Observed 2026-11-01 (Asia/Karachi); updated through Module 4 on 2026-11-04.** Recheck before acting; this is a snapshot, not a permanent count. See `PROJECT_HANDBOOK.md` for the architecture and rules.
 
+## 2026-11-27 — "Too senior" tab on the dashboard (uncommitted)
+
+| Item | Result |
+|---|---|
+| Change | `dashboard/focus.py`: an Unverified job whose title matches `decision.SENIOR_TITLE` (staff, principal, lead, head of, director, vp, manager, architect, senior, sr) is shown under a new **Too senior** tab instead of Unverified. Derived at read time: no tag, assessment or database change; a Good fit pick still moves it to Eligible; Eligible and Ineligible jobs are not moved |
+| Why | Of 32 jobs the user marked Not for me on 2026-11-27 (all Unverified), 14 were senior or management titles |
+| Verification | Full suite **1066 passed**; Ruff clean. On the live data the focus counts are Eligible 5, Unverified 51, Too senior 39, Ineligible 753, Applied 3 |
+| Not verified | Not yet seen in a restarted dashboard; the title regex is the existing one used by the good-enough rule, so some non-seniority titles containing "lead" or "architect" will also move |
+
 ## 2026-11-27 — Link sync on dashboard start (code commit `8655988`; tag `judge-location-items-and-link-sync`)
 
 | Item | Result |

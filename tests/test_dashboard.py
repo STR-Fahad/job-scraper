@@ -663,3 +663,65 @@ def test_the_applied_tally_counts_submitted_jobs_by_status_and_recent_window():
     assert line.startswith("6 applied in total · 3 in the last 7 days · 4 in the last 30 days")
     assert "Applied 3" in line and "Rejected 1" in line and "1 saved" in line
     assert tally({}, today)["total"] == 0 and tally_line(tally({}, today)).startswith("0 applied")
+
+
+# ---- senior titles in Unverified are set apart --------------------------------------------------
+
+
+def _fake_snapshot(rows):
+    from types import SimpleNamespace
+
+    return SimpleNamespace(
+        rows=rows,
+        by_id={r["job_id"]: r for r in rows},
+        population_by_id={},
+        counts={"final": {"not_judged": 0}},
+    )
+
+
+def _row(job_id, title, status, code=None):
+    return {
+        "job_id": job_id,
+        "title": title,
+        "company": "Co",
+        "sources": ["arbeitnow"],
+        "lifecycle": "active",
+        "listed": True,
+        "final_status": status,
+        "final_code": code,
+        "score": 10,
+        "eligibility": "UNVERIFIED",
+        "classification_stale": False,
+        "experience": "none stated",
+        "source_url": "https://example.test/x",
+        "application_url": None,
+    }
+
+
+def test_senior_titled_unverified_jobs_get_their_own_tab_and_nothing_else_moves():
+    from job_scraper.dashboard import focus
+
+    rows = [
+        _row(1, "Senior Backend Engineer", "UNVERIFIED"),
+        _row(2, "Engineering Manager", "UNVERIFIED"),
+        _row(3, "Staff AI Engineer", "UNVERIFIED"),
+        _row(4, "Junior Python Developer", "UNVERIFIED"),
+        _row(5, "Senior Site Engineer", "ELIGIBLE"),  # only Unverified jobs move
+        _row(6, "Senior Data Engineer", "INELIGIBLE"),
+        _row(7, "Software Engineer", "UNVERIFIED"),
+    ]
+    snapshot = _fake_snapshot(rows)
+    result = focus.build(snapshot, {}, {"d": "TOO_SENIOR"}, {})
+    assert result["counts"]["TOO_SENIOR"] == 3 and result["counts"]["UNVERIFIED"] == 2
+    assert {i["job_id"] for i in result["items"]} == {1, 2, 3}
+    assert result["counts"]["ELIGIBLE"] == 1 and result["counts"]["INELIGIBLE"] == 1
+    assert "Too senior" in focus.focus_page(result, "token")
+
+
+def test_a_good_fit_pick_still_lifts_a_senior_titled_job_out_of_the_senior_tab():
+    from job_scraper.dashboard import focus
+
+    snapshot = _fake_snapshot([_row(1, "Lead Python Engineer", "UNVERIFIED")])
+    fit = {1: {"verdict": "good_fit"}}
+    result = focus.build(snapshot, {}, {"d": "ELIGIBLE"}, fit)
+    assert result["counts"]["ELIGIBLE"] == 1 and result["counts"]["TOO_SENIOR"] == 0
